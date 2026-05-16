@@ -1,0 +1,17 @@
+# Database
+pos.db
+pos.db-shm
+pos.db-wal
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temp
+tmp/
