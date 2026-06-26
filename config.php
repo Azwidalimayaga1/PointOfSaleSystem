@@ -29,8 +29,9 @@ function initDatabase(PDO $db): void
             username VARCHAR(255) NOT NULL UNIQUE,
             password VARCHAR(255) NOT NULL,
             full_name VARCHAR(255) NOT NULL,
-            role VARCHAR(50) NOT NULL CHECK(role IN ('admin','manager','cashier')),
+            role VARCHAR(50) NOT NULL DEFAULT 'cashier',
             status VARCHAR(50) DEFAULT 'active',
+            store_id INT DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
@@ -125,9 +126,107 @@ function initDatabase(PDO $db): void
             FOREIGN KEY (sender_id) REFERENCES users(id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS rate_limits (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            identifier VARCHAR(255) NOT NULL,
+            action VARCHAR(255) NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_rate_limits_lookup (identifier, action, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS stores (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            address TEXT,
+            contact VARCHAR(255),
+            email VARCHAR(255),
+            currency VARCHAR(10) DEFAULT 'R',
+            tax_rate DECIMAL(10,2) DEFAULT 15,
+            receipt_footer TEXT,
+            daily_target DECIMAL(10,2) DEFAULT 5000,
+            self_checkout_enabled TINYINT DEFAULT 1,
+            status VARCHAR(50) DEFAULT 'active',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS customers (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            phone VARCHAR(50),
+            email VARCHAR(255),
+            address TEXT,
+            notes TEXT,
+            store_id INT DEFAULT 1,
+            visit_count INT DEFAULT 0,
+            total_spent DECIMAL(10,2) DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            user_name VARCHAR(255) NOT NULL,
+            user_role VARCHAR(50) NOT NULL,
+            store_id INT DEFAULT NULL,
+            action VARCHAR(100) NOT NULL,
+            entity_type VARCHAR(50) DEFAULT NULL,
+            entity_id INT DEFAULT NULL,
+            details TEXT DEFAULT NULL,
+            ip_address VARCHAR(45) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_audit_action (action),
+            INDEX idx_audit_entity (entity_type, entity_id),
+            INDEX idx_audit_store (store_id),
+            INDEX idx_audit_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS backups (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            filename VARCHAR(255) NOT NULL,
+            file_size BIGINT DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'completed',
+            type VARCHAR(50) DEFAULT 'manual',
+            notes TEXT DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+}
+
+// Add missing columns to existing tables (safe for re-runs)
+function addMissingColumns(PDO $db): void
+{
+    $cols = [
+        "ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255) DEFAULT NULL",
+        "ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255) DEFAULT NULL",
+        "ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_phone VARCHAR(50) DEFAULT NULL",
+        "ALTER TABLE sales ADD COLUMN IF NOT EXISTS store_id INT DEFAULT 1",
+        "ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_id INT DEFAULT NULL",
+        "ALTER TABLE stock_adjustments ADD COLUMN IF NOT EXISTS store_id INT DEFAULT 1",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS store_id INT DEFAULT 1",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS store_id INT DEFAULT NULL",
+    ];
+    foreach ($cols as $sql) {
+        try { $db->exec($sql); } catch (PDOException $e) {}
+    }
+    // Migrate existing users without store_id to store 1
+    try { $db->exec("UPDATE users SET store_id = 1 WHERE store_id IS NULL"); } catch (PDOException $e) {}
+    // Drop CHECK constraint on role to allow 'store_admin' for existing DBs
+    try { $db->exec("ALTER TABLE users MODIFY COLUMN role VARCHAR(50) NOT NULL DEFAULT 'cashier'"); } catch (PDOException $e) {}
 }
 
 initDatabase($db);
+
+addMissingColumns($db);
 
 // Default settings
 $defaultSettings = [
@@ -176,3 +275,33 @@ if ($stmt->fetchColumn() == 0) {
 }
 
 define('CURRENT_USER', $_SESSION['user'] ?? null);
+
+// Default store
+$stmt = $db->query("SELECT COUNT(*) FROM stores");
+if ($stmt->fetchColumn() == 0) {
+    $db->prepare("INSERT INTO stores (name, address, contact, email, currency, tax_rate, receipt_footer, daily_target, self_checkout_enabled, status) VALUES (?,?,?,?,?,?,?,?,?,?)")
+       ->execute([STORE_NAME, STORE_ADDRESS, STORE_CONTACT, '', CURRENCY, TAX_RATE, RECEIPT_FOOTER, DAILY_TARGET, 1, 'active']);
+}
+
+// Auto-create store_admin for each store
+$stmt = $db->query("SELECT id, name FROM stores ORDER BY id");
+$allStores = $stmt->fetchAll();
+foreach ($allStores as $s) {
+    $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE role = 'store_admin' AND store_id = ?");
+    $stmt->execute([$s['id']]);
+    if ($stmt->fetchColumn() == 0) {
+        $hash = password_hash('admin123', PASSWORD_BCRYPT);
+        $username = 'admin_store' . $s['id'];
+        $fullName = $s['name'] . ' Admin';
+        $db->prepare("INSERT INTO users (username, password, full_name, role, store_id) VALUES (?, ?, ?, 'store_admin', ?)")
+           ->execute([$username, $hash, $fullName, $s['id']]);
+    }
+}
+
+$activeStoreId = (int) ($_SESSION['store_id'] ?? 0);
+if ($activeStoreId <= 0) {
+    $stmt = $db->query("SELECT MIN(id) FROM stores");
+    $activeStoreId = (int) $stmt->fetchColumn();
+}
+define('ACTIVE_STORE_ID', $activeStoreId ?: 1);
+define('SELF_CHECKOUT_ENABLED', true);

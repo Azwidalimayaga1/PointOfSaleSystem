@@ -41,6 +41,7 @@ $categories = getCategories($db);
         <table>
             <thead>
                 <tr>
+                    <th></th>
                     <th>Name</th>
                     <th>Barcode</th>
                     <th>Category</th>
@@ -53,10 +54,11 @@ $categories = getCategories($db);
             </thead>
             <tbody>
                 <?php if (empty($products)): ?>
-                    <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--gray-400)">No products found.</td></tr>
+                    <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--gray-400)">No products found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($products as $p): ?>
                     <tr>
+                        <td><?php if ($p['image']): ?><img src="<?= e($p['image']) ?>" alt="" class="product-thumb"><?php endif; ?></td>
                         <td><strong><?= e($p['name']) ?></strong></td>
                         <td><?= e($p['barcode'] ?? '-') ?></td>
                         <td><span class="badge badge-gray"><?= e($p['category'] ?? '-') ?></span></td>

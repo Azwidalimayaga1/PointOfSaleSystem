@@ -5,11 +5,14 @@ declare(strict_types=1);
 $editUser = null;
 $errors = [];
 $success = '';
+$currentUserRole = $_SESSION['user']['role'] ?? '';
+$isSystemAdmin = $currentUserRole === 'admin';
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($id > 0) {
-    $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$id]);
+    $storeClause = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
+    $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND $storeClause");
+    $stmt->execute([$id, activeStoreId()]);
     $editUser = $stmt->fetch();
     if (!$editUser) redirect('index.php?page=users');
 }
@@ -32,23 +35,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->execute([$username, $userId]);
     if ($stmt->fetchColumn() > 0) $errors[] = 'Username already taken.';
 
+    // Prevent store_admin from assigning system admin role
+    if (!$isSystemAdmin && $role === 'admin') {
+        $errors[] = 'You do not have permission to assign the System Admin role.';
+    }
+
     if (empty($errors)) {
         if ($userId > 0) {
+            $storeClause = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
             if ($password) {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, role=?, status=?, password=? WHERE id=?");
-                $stmt->execute([$username, $fullName, $role, $status, $hash, $userId]);
+                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, role=?, status=?, password=? WHERE id=? AND $storeClause");
+                $stmt->execute([$username, $fullName, $role, $status, $hash, $userId, activeStoreId()]);
             } else {
-                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, role=?, status=? WHERE id=?");
-                $stmt->execute([$username, $fullName, $role, $status, $userId]);
+                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, role=?, status=? WHERE id=? AND $storeClause");
+                $stmt->execute([$username, $fullName, $role, $status, $userId, activeStoreId()]);
             }
+            logAction($db, 'user_update', 'user', $userId, 'Updated user: ' . $username . ' (role: ' . $role . ', status: ' . $status . ')');
             $success = 'User updated successfully.';
         } else {
             $hash = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $db->prepare("INSERT INTO users (username, full_name, role, status, password) VALUES (?,?,?,?,?)");
-            $stmt->execute([$username, $fullName, $role, $status, $hash]);
+            $stmt = $db->prepare("INSERT INTO users (username, full_name, role, status, password, store_id) VALUES (?,?,?,?,?,?)");
+            $stmt->execute([$username, $fullName, $role, $status, $hash, activeStoreId()]);
+            $newUserId = (int) $db->lastInsertId();
+            logAction($db, 'user_create', 'user', $newUserId, 'Created user: ' . $username . ' (role: ' . $role . ')');
             $success = 'User added successfully.';
-            $userId = (int) $db->lastInsertId();
+            $userId = $newUserId;
         }
         $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
         $stmt->execute([$userId]);
@@ -87,7 +99,10 @@ $u = $editUser;
                 <select id="role" name="role" class="form-control">
                     <option value="cashier" <?= ($u['role'] ?? '') === 'cashier' ? 'selected' : '' ?>>Cashier</option>
                     <option value="manager" <?= ($u['role'] ?? '') === 'manager' ? 'selected' : '' ?>>Manager</option>
-                    <option value="admin" <?= ($u['role'] ?? '') === 'admin' ? 'selected' : '' ?>>Admin</option>
+                    <option value="store_admin" <?= ($u['role'] ?? '') === 'store_admin' ? 'selected' : '' ?>>Store Admin</option>
+                    <?php if ($isSystemAdmin): ?>
+                    <option value="admin" <?= ($u['role'] ?? '') === 'admin' ? 'selected' : '' ?>>System Admin</option>
+                    <?php endif; ?>
                 </select>
             </div>
             <div class="form-group">

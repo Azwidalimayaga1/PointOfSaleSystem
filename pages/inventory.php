@@ -5,8 +5,8 @@ declare(strict_types=1);
 $search = $_GET['search'] ?? '';
 $filter = $_GET['filter'] ?? '';
 
-$sql = "SELECT * FROM products WHERE 1=1";
-$params = [];
+$sql = "SELECT * FROM products WHERE store_id = ?";
+$params = [activeStoreId()];
 
 if ($search) {
     $sql .= " AND (name LIKE ? OR barcode LIKE ?)";
@@ -95,7 +95,7 @@ $products = $stmt->fetchAll();
                         </td>
                     </tr>
                     <?php if ($isLow || $isOut): ?>
-                        <tr style="background:#fef2f2">
+                        <tr style="background:var(--bg-danger-light)">
                             <td colspan="7" style="padding:6px 14px;font-size:12px;color:var(--danger)">
                                 <i class="fas fa-exclamation-circle"></i>
                                 <?php if ($isOut): ?>

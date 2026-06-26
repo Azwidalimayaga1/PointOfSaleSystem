@@ -36,8 +36,8 @@ try {
     foreach ($data as $item) {
         $itemStmt->execute([$saleId, (int) $item['id'], $item['name'], (int) $item['qty'], (float) $item['price'], 0, (float) $item['price'] * (int) $item['qty']]);
 
-        $pStmt = $db->prepare("SELECT stock_quantity, cost_price FROM products WHERE id = ?");
-        $pStmt->execute([(int) $item['id']]);
+        $pStmt = $db->prepare("SELECT stock_quantity, cost_price FROM products WHERE id = ? AND store_id = ?");
+        $pStmt->execute([(int) $item['id'], activeStoreId()]);
         $prod = $pStmt->fetch();
         $prevStock = (int) ($prod['stock_quantity'] ?? 0);
         $newStock = $prevStock - (int) $item['qty'];

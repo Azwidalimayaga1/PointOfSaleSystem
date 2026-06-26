@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
-$products = $db->query("SELECT * FROM products WHERE status = 'active' ORDER BY name ASC")->fetchAll();
-$categories = $db->query("SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '' AND status = 'active' ORDER BY category")->fetchAll(PDO::FETCH_COLUMN);
+$products = $db->prepare("SELECT * FROM products WHERE status = 'active' AND store_id = ? ORDER BY name ASC");
+$products->execute([activeStoreId()]);
+$products = $products->fetchAll();
+$categories = $db->prepare("SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND category != '' AND status = 'active' AND store_id = ? ORDER BY category");
+$categories->execute([activeStoreId()]);
+$categories = $categories->fetchAll(PDO::FETCH_COLUMN);
 
 // Flash messages
 $flash = $_SESSION['pos_flash'] ?? null;
@@ -39,6 +43,7 @@ unset($_SESSION['pos_flash']);
             <div class="product-grid" id="product-grid">
                 <?php foreach ($products as $p): ?>
                     <div class="product-card" data-name="<?= e(strtolower($p['name'])) ?>" data-barcode="<?= e(strtolower($p['barcode'] ?? '')) ?>" data-category="<?= e(strtolower($p['category'] ?? '')) ?>" onclick="addToCart(<?= (int) $p['id'] ?>, '<?= e($p['name']) ?>', <?= (float) $p['price'] ?>, <?= (int) $p['stock_quantity'] ?>)">
+                        <?php if ($p['image']): ?><img src="<?= e($p['image']) ?>" alt="" class="product-card-img"><?php endif; ?>
                         <h4><?= e($p['name']) ?></h4>
                         <div class="sku"><?= e($p['barcode'] ?? 'No barcode') ?></div>
                         <div class="price"><?= money((float) $p['price']) ?></div>

@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$newStock, $productId]);
 
         recordStockAdjustment($db, $productId, $user['id'], $user['full_name'], $type, $quantity, $prevStock, $newStock, $reason);
+        logAction($db, 'stock_adjustment', 'product', $productId, 'Stock adjusted for ' . $product['name'] . ': ' . $type . ' qty=' . $quantity . ' (prev: ' . $prevStock . ', new: ' . $newStock . ')' . ($reason ? ' reason: ' . $reason : ''));
 
         $success = 'Stock adjusted successfully.';
         $product = getProduct($db, $productId);

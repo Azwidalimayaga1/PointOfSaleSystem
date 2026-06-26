@@ -72,7 +72,7 @@ $items = $stmt->fetchAll();
             <span>VAT (<?= (float) $sale['tax_rate'] ?>%)</span>
             <span><?= money((float) $sale['tax']) ?></span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;border-top:2px solid #000;padding-top:8px;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;border-top:2px solid var(--gray-800);padding-top:8px;margin-top:8px">
             <span>Total</span>
             <span><?= money((float) $sale['total']) ?></span>
         </div>

@@ -33,7 +33,7 @@ $unread = getAllUnreadMessages($db);
     </div>
 <?php else: ?>
     <?php foreach ($messages as $msg): ?>
-        <div class="card" style="<?= (int) $msg['is_read'] ? '' : 'border-left:4px solid var(--primary);background:#fafbff' ?>">
+        <div class="card" style="<?= (int) $msg['is_read'] ? '' : 'border-left:4px solid var(--primary);background:var(--bg-info-light)' ?>">
             <div style="display:flex;justify-content:space-between;align-items:start;gap:12px">
                 <div style="flex:1">
                     <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;flex-wrap:wrap">

@@ -2,20 +2,30 @@
 
 declare(strict_types=1);
 
+$userRole = $_SESSION['user']['role'] ?? '';
+$isSystemAdmin = $userRole === 'admin';
+$storeIdFilter = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
+
 // Handle approve/reject
 if (isset($_GET['approve'])) {
-    $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ?");
-    $stmt->execute([(int) $_GET['approve']]);
+    $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND $storeIdFilter");
+    $stmt->execute([(int) $_GET['approve'], activeStoreId()]);
+    logAction($db, 'user_approve', 'user', (int) $_GET['approve'], 'Approved user ID: ' . (int) $_GET['approve']);
     redirect('index.php?page=users');
 }
 if (isset($_GET['reject'])) {
-    $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
-    $stmt->execute([(int) $_GET['reject']]);
+    $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ? AND $storeIdFilter");
+    $stmt->execute([(int) $_GET['reject'], activeStoreId()]);
+    logAction($db, 'user_reject', 'user', (int) $_GET['reject'], 'Rejected user ID: ' . (int) $_GET['reject']);
     redirect('index.php?page=users');
 }
 
-$users = $db->query("SELECT id, username, full_name, role, status, created_at FROM users ORDER BY status = 'pending' DESC, role, full_name")->fetchAll();
-$pendingCount = $db->query("SELECT COUNT(*) FROM users WHERE status = 'pending'")->fetchColumn();
+$users = $db->prepare("SELECT id, username, full_name, role, status, created_at FROM users WHERE $storeIdFilter ORDER BY status = 'pending' DESC, role, full_name");
+$users->execute([activeStoreId()]);
+$users = $users->fetchAll();
+$pendingCount = $db->prepare("SELECT COUNT(*) FROM users WHERE status = 'pending' AND $storeIdFilter");
+$pendingCount->execute([activeStoreId()]);
+$pendingCount = $pendingCount->fetchColumn();
 ?>
 <div class="page-header">
     <h1><i class="fas fa-users"></i> User Management</h1>
@@ -44,12 +54,12 @@ $pendingCount = $db->query("SELECT COUNT(*) FROM users WHERE status = 'pending'"
             </thead>
             <tbody>
                 <?php foreach ($users as $u): ?>
-                    <tr style="<?= $u['status'] === 'pending' ? 'background:#fffbeb' : '' ?>">
+                    <tr style="<?= $u['status'] === 'pending' ? 'background:var(--bg-warning-light)' : '' ?>">
                         <td><strong><?= e($u['username']) ?></strong></td>
                         <td><?= e($u['full_name']) ?></td>
                         <td>
-                            <span class="badge <?= $u['role'] === 'admin' ? 'badge-danger' : ($u['role'] === 'manager' ? 'badge-warning' : 'badge-info') ?>">
-                                <?= e(ucfirst($u['role'])) ?>
+                            <span class="badge <?= $u['role'] === 'admin' ? 'badge-danger' : ($u['role'] === 'manager' ? 'badge-warning' : ($u['role'] === 'store_admin' ? 'badge-primary' : 'badge-info')) ?>">
+                                <?= e($u['role'] === 'store_admin' ? 'Store Admin' : ucfirst($u['role'])) ?>
                             </span>
                         </td>
                         <td>

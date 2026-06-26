@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute(['currency', $currency]);
         $stmt->execute(['receipt_footer', $receiptFooter]);
         $stmt->execute(['daily_target', (string) $dailyTarget]);
+        logAction($db, 'settings_update', 'settings', null, 'Settings updated: store_name=' . $storeName . ', tax_rate=' . $taxRate . ', currency=' . $currency . ', daily_target=' . $dailyTarget);
         $success = 'Settings saved successfully.';
     }
 }

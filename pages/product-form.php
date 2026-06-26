@@ -9,8 +9,10 @@ $success = '';
 // Handle delete
 if (isset($_POST['delete_id'])) {
     requireRole('admin', 'manager');
-    $stmt = $db->prepare("DELETE FROM products WHERE id = ?");
-    $stmt->execute([(int) $_POST['delete_id']]);
+    $delProduct = getProduct($db, (int) $_POST['delete_id']);
+    $stmt = $db->prepare("DELETE FROM products WHERE id = ? AND store_id = ?");
+    $stmt->execute([(int) $_POST['delete_id'], activeStoreId()]);
+    logAction($db, 'product_delete', 'product', (int) $_POST['delete_id'], 'Deleted product: ' . ($delProduct['name'] ?? ''));
     redirect('index.php?page=products');
 }
 
@@ -38,15 +40,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_id'])) {
 
     if (empty($errors)) {
         if ($productId > 0) {
-            $stmt = $db->prepare("UPDATE products SET name=?, barcode=?, category=?, price=?, cost_price=?, stock_quantity=?, low_stock_threshold=?, supplier=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-            $stmt->execute([$name, $barcode ?: null, $category ?: null, $price, $cost_price, $stock_quantity, $low_stock_threshold, $supplier ?: null, $status, $productId]);
+            $stmt = $db->prepare("UPDATE products SET name=?, barcode=?, category=?, price=?, cost_price=?, stock_quantity=?, low_stock_threshold=?, supplier=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND store_id=?");
+            $stmt->execute([$name, $barcode ?: null, $category ?: null, $price, $cost_price, $stock_quantity, $low_stock_threshold, $supplier ?: null, $status, $productId, activeStoreId()]);
+            logAction($db, 'product_update', 'product', $productId, 'Updated product: ' . $name . ' (price: ' . $price . ', stock: ' . $stock_quantity . ')');
             $success = 'Product updated successfully.';
             $editProduct = getProduct($db, $productId);
         } else {
-            $stmt = $db->prepare("INSERT INTO products (name, barcode, category, price, cost_price, stock_quantity, low_stock_threshold, supplier, status) VALUES (?,?,?,?,?,?,?,?,?)");
-            $stmt->execute([$name, $barcode ?: null, $category ?: null, $price, $cost_price, $stock_quantity, $low_stock_threshold, $supplier ?: null, $status]);
+            $stmt = $db->prepare("INSERT INTO products (name, barcode, category, price, cost_price, stock_quantity, low_stock_threshold, supplier, status, store_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
+            $stmt->execute([$name, $barcode ?: null, $category ?: null, $price, $cost_price, $stock_quantity, $low_stock_threshold, $supplier ?: null, $status, activeStoreId()]);
+            $newId = (int) $db->lastInsertId();
+            logAction($db, 'product_create', 'product', $newId, 'Created product: ' . $name . ' (price: ' . $price . ', stock: ' . $stock_quantity . ')');
             $success = 'Product added successfully.';
-            $editProduct = getProduct($db, (int) $db->lastInsertId());
+            $editProduct = getProduct($db, $newId);
         }
     }
 }

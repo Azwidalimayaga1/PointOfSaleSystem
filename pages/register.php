@@ -9,12 +9,14 @@ header('Expires: 0');
 
 $error = '';
 $success = '';
+$stores = $db->query("SELECT * FROM stores WHERE status = 'active' ORDER BY name ASC")->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $fullName = trim($_POST['full_name'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirm = $_POST['confirm_password'] ?? '';
+    $storeId = (int) ($_POST['store_id'] ?? 0);
 
     if (!$username || !$fullName || !$password) {
         $error = 'All fields are required.';
@@ -23,15 +25,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($password !== $confirm) {
         $error = 'Passwords do not match.';
     } else {
-        $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
-        $stmt->execute([$username]);
-        if ($stmt->fetchColumn() > 0) {
-            $error = 'Username already exists.';
+        // Validate store exists
+        $store = getStore($db, $storeId);
+        if (!$store) {
+            $error = 'Please select a valid store.';
         } else {
-            $hash = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $db->prepare("INSERT INTO users (username, password, full_name, role, status) VALUES (?, ?, ?, 'cashier', 'pending')");
-            $stmt->execute([$username, $hash, $fullName]);
-            $success = 'Registration submitted! Wait for admin approval before logging in.';
+            $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
+            $stmt->execute([$username]);
+            if ($stmt->fetchColumn() > 0) {
+                $error = 'Username already exists.';
+            } else {
+                $hash = password_hash($password, PASSWORD_BCRYPT);
+                $stmt = $db->prepare("INSERT INTO users (username, password, full_name, role, status, store_id) VALUES (?, ?, ?, 'cashier', 'pending', ?)");
+                $stmt->execute([$username, $hash, $fullName, $storeId]);
+                $success = 'Registration submitted! Wait for admin approval before logging in.';
+            }
         }
     }
 }
@@ -42,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e(STORE_NAME) ?> - Register</title>
+    <script>if(localStorage.getItem('pos-theme')==='dark')document.documentElement.setAttribute('data-theme','dark')</script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -71,6 +80,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" name="password" id="password" class="form-control" required minlength="6">
+            </div>
+            <div class="form-group">
+                <label for="store_id">Select Store</label>
+                <select name="store_id" id="store_id" class="form-control" required>
+                    <option value="">-- Choose a store --</option>
+                    <?php foreach ($stores as $s): ?>
+                        <option value="<?= (int) $s['id'] ?>" <?= isset($_POST['store_id']) && (int) $_POST['store_id'] === (int) $s['id'] ? 'selected' : '' ?>>
+                            <?= e($s['name']) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="form-group">
                 <label for="confirm_password">Confirm Password</label>

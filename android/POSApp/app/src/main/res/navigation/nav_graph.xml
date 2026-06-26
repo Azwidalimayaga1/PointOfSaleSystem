@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/loginFragment">
+
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.possystem.app.ui.auth.LoginFragment"
+        android:label="Login"
+        tools:layout="@layout/fragment_login" />
+
+    <fragment
+        android:id="@+id/dashboardFragment"
+        android:name="com.possystem.app.ui.dashboard.DashboardFragment"
+        android:label="Dashboard"
+        tools:layout="@layout/fragment_dashboard" />
+
+    <fragment
+        android:id="@+id/productsFragment"
+        android:name="com.possystem.app.ui.products.ProductsFragment"
+        android:label="Products"
+        tools:layout="@layout/fragment_products" />
+
+    <fragment
+        android:id="@+id/productFormFragment"
+        android:name="com.possystem.app.ui.products.ProductFormFragment"
+        android:label="Product Form"
+        tools:layout="@layout/fragment_product_form" />
+
+    <fragment
+        android:id="@+id/salesFragment"
+        android:name="com.possystem.app.ui.sales.SalesFragment"
+        android:label="Sales"
+        tools:layout="@layout/fragment_sales" />
+
+    <fragment
+        android:id="@+id/inventoryFragment"
+        android:name="com.possystem.app.ui.inventory.InventoryFragment"
+        android:label="Inventory"
+        tools:layout="@layout/fragment_inventory" />
+
+    <fragment
+        android:id="@+id/customersFragment"
+        android:name="com.possystem.app.ui.customers.CustomersFragment"
+        android:label="Customers"
+        tools:layout="@layout/fragment_customers" />
+
+    <fragment
+        android:id="@+id/customerFormFragment"
+        android:name="com.possystem.app.ui.customers.CustomerFormFragment"
+        android:label="Customer Form"
+        tools:layout="@layout/fragment_customer_form" />
+
+    <fragment
+        android:id="@+id/reportsFragment"
+        android:name="com.possystem.app.ui.reports.ReportsFragment"
+        android:label="Reports"
+        tools:layout="@layout/fragment_reports" />
+
+    <fragment
+        android:id="@+id/returnsFragment"
+        android:name="com.possystem.app.ui.returns.ReturnsFragment"
+        android:label="Returns"
+        tools:layout="@layout/fragment_returns" />
+
+    <fragment
+        android:id="@+id/messagesFragment"
+        android:name="com.possystem.app.ui.messages.MessagesFragment"
+        android:label="Messages"
+        tools:layout="@layout/fragment_messages" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.possystem.app.ui.settings.SettingsFragment"
+        android:label="Settings"
+        tools:layout="@layout/fragment_settings" />
+
+    <fragment
+        android:id="@+id/usersFragment"
+        android:name="com.possystem.app.ui.users.UsersFragment"
+        android:label="Users"
+        tools:layout="@layout/fragment_users" />
+
+    <fragment
+        android:id="@+id/receiptFragment"
+        android:name="com.possystem.app.ui.receipt.ReceiptFragment"
+        android:label="Receipt"
+        tools:layout="@layout/fragment_receipt" />
+</navigation>
