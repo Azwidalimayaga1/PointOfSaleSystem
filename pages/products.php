@@ -19,14 +19,14 @@ $categories = getCategories($db);
 <div class="card">
     <form method="get" class="search-bar">
         <input type="hidden" name="page" value="products">
-        <input type="text" name="search" class="form-control" placeholder="Search by name or barcode..." value="<?= e($search) ?>">
-        <select name="category" class="form-control">
+        <input type="text" name="search" class="form-control" placeholder="Search by name or barcode..." value="<?= e($search) ?>" aria-label="Search products">
+        <select name="category" class="form-control" aria-label="Category filter">
             <option value="">All Categories</option>
             <?php foreach ($categories as $cat): ?>
                 <option value="<?= e($cat) ?>" <?= $category === $cat ? 'selected' : '' ?>><?= e($cat) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="stock" class="form-control">
+        <select name="stock" class="form-control" aria-label="Stock filter">
             <option value="">All Stock</option>
             <option value="low" <?= $stockFilter === 'low' ? 'selected' : '' ?>>Low Stock</option>
             <option value="out" <?= $stockFilter === 'out' ? 'selected' : '' ?>>Out of Stock</option>
@@ -54,7 +54,7 @@ $categories = getCategories($db);
             </thead>
             <tbody>
                 <?php if (empty($products)): ?>
-                    <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--gray-400)">No products found.</td></tr>
+                    <tr><td colspan="9" class="text-center p-40 text-muted">No products found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($products as $p): ?>
                     <tr>
@@ -79,15 +79,16 @@ $categories = getCategories($db);
                             </span>
                         </td>
                         <td>
-                            <a href="index.php?page=product-form&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-primary">
+                            <a href="index.php?page=product-form&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-primary" title="Edit product">
                                 <i class="fas fa-edit"></i>
                             </a>
-                            <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-warning">
+                            <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-warning" title="Adjust stock">
                                 <i class="fas fa-cubes"></i>
                             </a>
                             <form method="post" action="index.php?page=product-form" style="display:inline" onsubmit="return confirm('Delete this product?')">
                                 <input type="hidden" name="delete_id" value="<?= (int) $p['id'] ?>">
-                                <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i></button>
+                                <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
+                                <button type="submit" class="btn btn-sm btn-danger" title="Delete product"><i class="fas fa-trash"></i></button>
                             </form>
                         </td>
                     </tr>

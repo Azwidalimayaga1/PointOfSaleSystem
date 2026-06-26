@@ -2,6 +2,15 @@
 
 declare(strict_types=1);
 
+// Secure session cookie settings
+session_set_cookie_params([
+    'lifetime' => 0,
+    'path' => '/',
+    'domain' => '',
+    'secure' => (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'),
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 session_start();
 
 // Database
@@ -12,7 +21,9 @@ define('DB_PASS', '');
 
 // PDO connection
 try {
-    $db = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS);
+    $db = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
+        PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+    ]);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $db->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
@@ -97,7 +108,7 @@ function initDatabase(PDO $db): void
             product_id INT NOT NULL,
             user_id INT NOT NULL,
             user_name VARCHAR(255) NOT NULL,
-            type VARCHAR(50) NOT NULL CHECK(type IN ('sale','purchase','return','adjustment','damage')),
+            type VARCHAR(50) NOT NULL CHECK(type IN ('sale','purchase','return','adjustment','damage','exchange')),
             quantity INT NOT NULL,
             previous_stock INT NOT NULL,
             new_stock INT NOT NULL,
@@ -200,6 +211,73 @@ function initDatabase(PDO $db): void
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS return_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            sale_id INT NOT NULL,
+            receipt_number VARCHAR(255) NOT NULL,
+            cashier_id INT NOT NULL,
+            cashier_name VARCHAR(255) NOT NULL,
+            items JSON NOT NULL,
+            reason VARCHAR(50) NOT NULL,
+            resolution VARCHAR(50) NOT NULL,
+            refund_amount DECIMAL(10,2) DEFAULT 0,
+            exchange_product_id INT DEFAULT NULL,
+            exchange_product_name VARCHAR(255) DEFAULT NULL,
+            exchange_qty INT DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'pending',
+            admin_id INT DEFAULT NULL,
+            admin_notes TEXT DEFAULT NULL,
+            store_id INT DEFAULT 1,
+            updated_at DATETIME DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sale_id) REFERENCES sales(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS held_sales (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            cashier_id INT NOT NULL,
+            cashier_name VARCHAR(255) NOT NULL,
+            items JSON NOT NULL,
+            subtotal DECIMAL(10,2) DEFAULT 0,
+            discount DECIMAL(10,2) DEFAULT 0,
+            tax DECIMAL(10,2) DEFAULT 0,
+            total DECIMAL(10,2) DEFAULT 0,
+            store_id INT DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(255) NOT NULL,
+            token VARCHAR(64) NOT NULL UNIQUE,
+            user_id INT DEFAULT NULL,
+            expires_at DATETIME NOT NULL,
+            used TINYINT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_token (token),
+            INDEX idx_email (email)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS email_verifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            token VARCHAR(64) NOT NULL UNIQUE,
+            expires_at DATETIME NOT NULL,
+            used TINYINT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_token (token),
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
 }
 
 // Add missing columns to existing tables (safe for re-runs)
@@ -227,6 +305,25 @@ function addMissingColumns(PDO $db): void
 initDatabase($db);
 
 addMissingColumns($db);
+
+// Add database indexes for performance
+function addDatabaseIndexes(PDO $db): void
+{
+    $indexes = [
+        "ALTER TABLE sales ADD INDEX IF NOT EXISTS idx_sales_store_id (store_id)",
+        "ALTER TABLE sales ADD INDEX IF NOT EXISTS idx_sales_created_at (created_at)",
+        "ALTER TABLE sale_items ADD INDEX IF NOT EXISTS idx_sale_items_sale_id (sale_id)",
+        "ALTER TABLE products ADD INDEX IF NOT EXISTS idx_products_store_id (store_id)",
+        "ALTER TABLE products ADD INDEX IF NOT EXISTS idx_products_barcode (barcode)",
+        "ALTER TABLE users ADD INDEX IF NOT EXISTS idx_users_store_id (store_id)",
+        "ALTER TABLE return_requests ADD INDEX IF NOT EXISTS idx_return_requests_store_id (store_id)",
+        "ALTER TABLE audit_logs ADD INDEX IF NOT EXISTS idx_audit_logs_created_at (created_at)",
+    ];
+    foreach ($indexes as $sql) {
+        try { $db->exec($sql); } catch (PDOException $e) {}
+    }
+}
+addDatabaseIndexes($db);
 
 // Default settings
 $defaultSettings = [

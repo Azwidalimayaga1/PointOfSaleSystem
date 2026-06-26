@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+$user = $_SESSION['user'] ?? [];
 $productId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $product = getProduct($db, $productId);
 if (!$product) redirect('index.php?page=inventory');
@@ -11,6 +12,10 @@ $errors = [];
 $history = getStockHistory($db, $productId);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        $errors[] = 'Invalid security token. Please refresh and try again.';
+    }
+
     $type = $_POST['type'] ?? 'adjustment';
     $quantity = (int) ($_POST['quantity'] ?? 0);
     $reason = trim($_POST['reason'] ?? '');
@@ -57,8 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="grid-2">
     <div class="card">
-        <h2 style="margin-bottom:16px">Current Stock: <strong><?= (int) $product['stock_quantity'] ?></strong></h2>
+        <h2 class="mb-16">Current Stock: <strong><?= (int) $product['stock_quantity'] ?></strong></h2>
         <form method="post">
+            <?= csrf_field() ?>
             <div class="form-group">
                 <label for="type">Adjustment Type</label>
                 <select id="type" name="type" class="form-control">
@@ -81,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <div class="card">
-        <h2 style="margin-bottom:16px">Stock History</h2>
+        <h2 class="mb-16">Stock History</h2>
         <?php if (empty($history)): ?>
             <p class="muted">No history yet.</p>
         <?php else: ?>

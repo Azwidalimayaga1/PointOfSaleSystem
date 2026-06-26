@@ -20,8 +20,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$username || !$fullName || !$password) {
         $error = 'All fields are required.';
-    } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters.';
+    } elseif (strlen($password) < 8) {
+        $error = 'Password must be at least 8 characters.';
     } elseif ($password !== $confirm) {
         $error = 'Passwords do not match.';
     } else {
@@ -51,6 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e(STORE_NAME) ?> - Register</title>
     <script>if(localStorage.getItem('pos-theme')==='dark')document.documentElement.setAttribute('data-theme','dark')</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -69,17 +72,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php else: ?>
         <form method="post">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" name="username" id="username" class="form-control" required autofocus>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" name="username" id="username" class="form-control" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="full_name">Full Name</label>
+                    <input type="text" name="full_name" id="full_name" class="form-control" required>
+                </div>
             </div>
-            <div class="form-group">
-                <label for="full_name">Full Name</label>
-                <input type="text" name="full_name" id="full_name" class="form-control" required>
-            </div>
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" name="password" id="password" class="form-control" required minlength="6">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" name="password" id="password" class="form-control" required minlength="8">
+                </div>
+                <div class="form-group">
+                    <label for="confirm_password">Confirm Password</label>
+                    <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
+                </div>
             </div>
             <div class="form-group">
                 <label for="store_id">Select Store</label>
@@ -92,16 +103,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="form-group">
-                <label for="confirm_password">Confirm Password</label>
-                <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
-            </div>
-            <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;padding:12px">
+            <button type="submit" class="btn btn-success w-full justify-center" style="padding:12px">
                 <i class="fas fa-user-plus"></i> Register
             </button>
         </form>
-        <p style="text-align:center;margin-top:16px;font-size:14px;color:var(--gray-500)">
-            Already have an account? <a href="index.php?page=login" style="color:var(--primary)">Sign in</a>
+        <p class="text-center mt-16 fs-14 text-muted">
+            Already have an account? <a href="index.php?page=login">Sign in</a>
         </p>
         <?php endif; ?>
     </div>

@@ -6,18 +6,43 @@ $userRole = $_SESSION['user']['role'] ?? '';
 $isSystemAdmin = $userRole === 'admin';
 $storeIdFilter = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
 
-// Handle approve/reject
-if (isset($_GET['approve'])) {
-    $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND $storeIdFilter");
-    $stmt->execute([(int) $_GET['approve'], activeStoreId()]);
-    logAction($db, 'user_approve', 'user', (int) $_GET['approve'], 'Approved user ID: ' . (int) $_GET['approve']);
-    redirect('index.php?page=users');
-}
-if (isset($_GET['reject'])) {
-    $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ? AND $storeIdFilter");
-    $stmt->execute([(int) $_GET['reject'], activeStoreId()]);
-    logAction($db, 'user_reject', 'user', (int) $_GET['reject'], 'Rejected user ID: ' . (int) $_GET['reject']);
-    redirect('index.php?page=users');
+// Handle approve/reject/delete via POST only
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $csrf = $_POST['_csrf'] ?? '';
+    if (!validate_csrf($csrf)) {
+        $_SESSION['pos_flash'] = ['type' => 'danger', 'message' => 'Invalid security token. Please refresh and try again.'];
+        redirect('index.php?page=users');
+    }
+
+    if (isset($_POST['approve'])) {
+        $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND $storeIdFilter");
+        $stmt->execute([(int) $_POST['approve'], activeStoreId()]);
+        logAction($db, 'user_approve', 'user', (int) $_POST['approve'], 'Approved user ID: ' . (int) $_POST['approve']);
+        redirect('index.php?page=users');
+    }
+    if (isset($_POST['reject'])) {
+        $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ? AND $storeIdFilter");
+        $stmt->execute([(int) $_POST['reject'], activeStoreId()]);
+        logAction($db, 'user_reject', 'user', (int) $_POST['reject'], 'Rejected user ID: ' . (int) $_POST['reject']);
+        redirect('index.php?page=users');
+    }
+    if (isset($_POST['delete'])) {
+        $userId = (int) $_POST['delete'];
+        $targetUser = $db->prepare("SELECT * FROM users WHERE id = ? AND $storeIdFilter");
+        $targetUser->execute([$userId, activeStoreId()]);
+        $targetUser = $targetUser->fetch();
+        if ($targetUser) {
+            if ((int) $targetUser['id'] === (int) ($_SESSION['user']['id'] ?? 0)) {
+                $_SESSION['pos_flash'] = ['type' => 'danger', 'message' => 'Cannot delete your own account.'];
+            } else {
+                $stmt = $db->prepare("DELETE FROM users WHERE id = ? AND $storeIdFilter");
+                $stmt->execute([$userId, activeStoreId()]);
+                logAction($db, 'user_delete', 'user', $userId, 'Deleted user: ' . $targetUser['username'] . ' (' . $targetUser['role'] . ')');
+                $_SESSION['pos_flash'] = ['type' => 'success', 'message' => 'User "' . $targetUser['username'] . '" deleted.'];
+            }
+        }
+        redirect('index.php?page=users');
+    }
 }
 
 $users = $db->prepare("SELECT id, username, full_name, role, status, created_at FROM users WHERE $storeIdFilter ORDER BY status = 'pending' DESC, role, full_name");
@@ -29,9 +54,9 @@ $pendingCount = $pendingCount->fetchColumn();
 ?>
 <div class="page-header">
     <h1><i class="fas fa-users"></i> User Management</h1>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="d-flex gap-8 align-center">
         <?php if ($pendingCount > 0): ?>
-            <span class="badge badge-danger" style="font-size:14px;padding:6px 14px">
+            <span class="badge badge-danger fs-14" style="padding:6px 14px">
                 <i class="fas fa-clock"></i> <?= (int) $pendingCount ?> pending approval
             </span>
         <?php endif; ?>
@@ -54,7 +79,7 @@ $pendingCount = $pendingCount->fetchColumn();
             </thead>
             <tbody>
                 <?php foreach ($users as $u): ?>
-                    <tr style="<?= $u['status'] === 'pending' ? 'background:var(--bg-warning-light)' : '' ?>">
+                    <tr class="<?= $u['status'] === 'pending' ? 'bg-warning-light' : '' ?>">
                         <td><strong><?= e($u['username']) ?></strong></td>
                         <td><?= e($u['full_name']) ?></td>
                         <td>
@@ -74,10 +99,25 @@ $pendingCount = $pendingCount->fetchColumn();
                         <td><?= e(date('Y-m-d', strtotime($u['created_at']))) ?></td>
                         <td>
                             <?php if ($u['status'] === 'pending'): ?>
-                                <a href="?page=users&approve=<?= (int) $u['id'] ?>" class="btn btn-sm btn-success"><i class="fas fa-check"></i> Approve</a>
-                                <a href="?page=users&reject=<?= (int) $u['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Reject this user?')"><i class="fas fa-times"></i> Reject</a>
+                                <form method="post" action="index.php?page=users" style="display:inline">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="approve" value="<?= (int) $u['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i> Approve</button>
+                                </form>
+                                <form method="post" action="index.php?page=users" style="display:inline" onsubmit="return confirm('Reject this user?')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="reject" value="<?= (int) $u['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i> Reject</button>
+                                </form>
                             <?php else: ?>
-                                <a href="index.php?page=user-form&id=<?= (int) $u['id'] ?>" class="btn btn-sm btn-primary"><i class="fas fa-edit"></i></a>
+                                <a href="index.php?page=user-form&id=<?= (int) $u['id'] ?>" class="btn btn-sm btn-primary" title="Edit user"><i class="fas fa-edit"></i></a>
+                                <?php if ((int) $u['id'] !== (int) ($_SESSION['user']['id'] ?? 0)): ?>
+                                <form method="post" action="index.php?page=users" style="display:inline" onsubmit="return confirm('Delete user <?= e($u['username']) ?>? This cannot be undone.')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="delete" value="<?= (int) $u['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-danger" title="Delete user"><i class="fas fa-trash"></i></button>
+                                </form>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </td>
                     </tr>

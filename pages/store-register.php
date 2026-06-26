@@ -22,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$storeName || !$username || !$fullName || !$password) {
         $error = 'Store name, username, full name, and password are required.';
-    } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters.';
+    } elseif (strlen($password) < 8) {
+        $error = 'Password must be at least 8 characters.';
     } elseif ($password !== $confirm) {
         $error = 'Passwords do not match.';
     } else {
@@ -65,11 +65,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e(STORE_NAME) ?> - Register Store</title>
     <script>if(localStorage.getItem('pos-theme')==='dark')document.documentElement.setAttribute('data-theme','dark')</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="login-page">
-    <div class="login-box" style="max-width:520px">
+    <div class="login-box" style="max-width:560px">
         <h1><i class="fas fa-store"></i> <?= e(STORE_NAME) ?></h1>
         <p>Register a new store</p>
 
@@ -78,19 +81,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
         <?php if ($success): ?>
             <div class="alert alert-success"><?= e($success) ?></div>
-            <div style="text-align:center;margin-top:16px">
+            <div class="text-center mt-16">
                 <a href="index.php?page=login" class="btn btn-primary"><i class="fas fa-sign-in-alt"></i> Go to Login</a>
             </div>
         <?php else: ?>
         <form method="post">
-            <h3 style="margin:16px 0 8px;font-size:15px;color:var(--gray-500)"><i class="fas fa-building"></i> Store Details</h3>
-            <div class="form-group">
-                <label for="store_name">Store Name</label>
-                <input type="text" name="store_name" id="store_name" class="form-control" required autofocus>
-            </div>
-            <div class="form-group">
-                <label for="address">Address</label>
-                <textarea name="address" id="address" class="form-control" rows="2"></textarea>
+            <h3 class="section-title"><i class="fas fa-building"></i> Store Details</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="store_name">Store Name</label>
+                    <input type="text" name="store_name" id="store_name" class="form-control" required autofocus>
+                </div>
+                <div class="form-group">
+                    <label for="address">Address</label>
+                    <input type="text" name="address" id="address" class="form-control">
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
@@ -103,31 +108,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </div>
 
-            <h3 style="margin:16px 0 8px;font-size:15px;color:var(--gray-500)"><i class="fas fa-user-shield"></i> Admin Account</h3>
-            <div class="form-group">
-                <label for="username">Admin Username</label>
-                <input type="text" name="username" id="username" class="form-control" required>
-            </div>
-            <div class="form-group">
-                <label for="full_name">Admin Full Name</label>
-                <input type="text" name="full_name" id="full_name" class="form-control" required>
+            <h3 class="section-title"><i class="fas fa-user-shield"></i> Admin Account</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="username">Admin Username</label>
+                    <input type="text" name="username" id="username" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="full_name">Admin Full Name</label>
+                    <input type="text" name="full_name" id="full_name" class="form-control" required>
+                </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" name="password" id="password" class="form-control" required minlength="6">
+                    <input type="password" name="password" id="password" class="form-control" required minlength="8">
                 </div>
                 <div class="form-group">
                     <label for="confirm_password">Confirm Password</label>
                     <input type="password" name="confirm_password" id="confirm_password" class="form-control" required>
                 </div>
             </div>
-            <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;padding:12px">
+            <button type="submit" class="btn btn-success w-full justify-center" style="padding:12px">
                 <i class="fas fa-paper-plane"></i> Submit Registration
             </button>
         </form>
-        <p style="text-align:center;margin-top:16px;font-size:14px;color:var(--gray-500)">
-            Already have an account? <a href="index.php?page=login" style="color:var(--primary)">Sign in</a>
+        <p class="text-center mt-16 fs-14 text-muted">
+            Already have an account? <a href="index.php?page=login">Sign in</a>
         </p>
         <?php endif; ?>
     </div>

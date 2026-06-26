@@ -43,38 +43,38 @@ $actionLabels = [
 ?>
 <div class="page-header">
     <h1><i class="fas fa-history"></i> System Audit Logs</h1>
-    <div style="display:flex;gap:8px">
+    <div class="d-flex gap-8">
         <a href="?page=audit-logs&export=csv&search=<?= e($search) ?>&action=<?= e($actionFilter) ?>&entity_type=<?= e($entityFilter) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="btn btn-sm btn-success"><i class="fas fa-file-csv"></i> Export CSV</a>
         <button onclick="window.print()" class="btn btn-sm btn-primary"><i class="fas fa-file-pdf"></i> Export PDF</button>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:16px">
-    <form method="get" class="search-bar" style="flex-wrap:wrap">
+<div class="card mb-16">
+    <form method="get" class="search-bar flex-wrap">
         <input type="hidden" name="page" value="audit-logs">
-        <input type="text" name="search" class="form-control" placeholder="Search user, action, details..." value="<?= e($search) ?>" style="min-width:180px">
-        <select name="action" class="form-control">
+        <input type="text" name="search" class="form-control" placeholder="Search user, action, details..." value="<?= e($search) ?>" style="min-width:180px" aria-label="Search audit logs">
+        <select name="action" class="form-control" aria-label="Filter by action">
             <option value="">All Actions</option>
             <?php foreach ($actions as $a): ?>
             <option value="<?= e($a) ?>" <?= $actionFilter === $a ? 'selected' : '' ?>><?= e($actionLabels[$a][0] ?? ucfirst(str_replace('_', ' ', $a))) ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="entity_type" class="form-control">
+        <select name="entity_type" class="form-control" aria-label="Filter by entity type">
             <option value="">All Entity Types</option>
             <?php foreach ($entityTypes as $et): ?>
             <option value="<?= e($et) ?>" <?= $entityFilter === $et ? 'selected' : '' ?>><?= e(ucfirst($et)) ?></option>
             <?php endforeach; ?>
         </select>
-        <input type="date" name="from" class="form-control" value="<?= e($from) ?>" title="From date">
-        <input type="date" name="to" class="form-control" value="<?= e($to) ?>" title="To date">
+        <input type="date" name="from" class="form-control" value="<?= e($from) ?>" aria-label="From date">
+        <input type="date" name="to" class="form-control" value="<?= e($to) ?>" aria-label="To date">
         <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Filter</button>
         <a href="?page=audit-logs" class="btn btn-outline"><i class="fas fa-times"></i> Clear</a>
     </form>
 </div>
 
 <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <span style="font-size:14px;color:var(--gray-500)"><?= $total ?> total entries (page <?= $page ?> of <?= $totalPages ?>)</span>
+    <div class="flex-between mb-12">
+        <span class="fs-14 text-muted"><?= $total ?> total entries (page <?= $page ?> of <?= $totalPages ?>)</span>
     </div>
     <div class="table-container">
         <table>
@@ -91,11 +91,11 @@ $actionLabels = [
             </thead>
             <tbody>
                 <?php if (empty($logs)): ?>
-                <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gray-400)">No audit log entries found.</td></tr>
+                <tr><td colspan="7" class="text-center p-40 text-muted">No audit log entries found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($logs as $log): ?>
                 <tr>
-                    <td style="white-space:nowrap"><?= e(date('Y-m-d H:i', strtotime($log['created_at']))) ?></td>
+                    <td class="nowrap"><?= e(date('Y-m-d H:i', strtotime($log['created_at']))) ?></td>
                     <td><strong><?= e($log['user_name']) ?></strong></td>
                     <td><span class="badge badge-info"><?= e(ucfirst($log['user_role'])) ?></span></td>
                     <td><?= e($log['store_name'] ?? '—') ?></td>
@@ -103,13 +103,13 @@ $actionLabels = [
                         <?php $label = $actionLabels[$log['action']] ?? [ucfirst(str_replace('_', ' ', $log['action'])), 'badge-info']; ?>
                         <span class="badge <?= $label[1] ?>"><?= e($label[0]) ?></span>
                     </td>
-                    <td style="max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= e($log['details'] ?? '') ?>">
+                    <td class="text-truncate" style="max-width:350px" title="<?= e($log['details'] ?? '') ?>">
                         <?php if ($log['entity_type'] && $log['entity_id']): ?>
-                            <a href="?page=audit-logs&entity_type=<?= e($log['entity_type']) ?>&search=<?= e($log['entity_id']) ?>" style="font-size:11px;color:var(--gray-400)">[<?= e($log['entity_type']) ?> #<?= (int) $log['entity_id'] ?>]</a>
+                            <a href="?page=audit-logs&entity_type=<?= e($log['entity_type']) ?>&search=<?= e($log['entity_id']) ?>" class="fs-11 text-muted">[<?= e($log['entity_type']) ?> #<?= (int) $log['entity_id'] ?>]</a>
                         <?php endif; ?>
                         <?= e($log['details'] ?? '') ?>
                     </td>
-                    <td style="font-size:12px;color:var(--gray-500);font-family:monospace"><?= e($log['ip_address'] ?? '') ?></td>
+                    <td class="fs-12 text-muted" style="font-family:monospace"><?= e($log['ip_address'] ?? '') ?></td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -117,7 +117,7 @@ $actionLabels = [
     </div>
 
     <?php if ($totalPages > 1): ?>
-    <div style="display:flex;justify-content:center;gap:6px;margin-top:16px;flex-wrap:wrap">
+    <div class="d-flex justify-center gap-6 mt-16 flex-wrap">
         <?php if ($page > 1): ?>
         <a href="?page=audit-logs&page=<?= $page - 1 ?>&search=<?= e($search) ?>&action=<?= e($actionFilter) ?>&entity_type=<?= e($entityFilter) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>&sort=<?= e($sort) ?>&dir=<?= e($dir) ?>" class="btn btn-sm btn-outline"><i class="fas fa-chevron-left"></i> Prev</a>
         <?php endif; ?>

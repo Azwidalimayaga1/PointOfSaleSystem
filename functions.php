@@ -14,6 +14,9 @@ function e(string $value): string
 
 function redirect(string $url): never
 {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
     header('Location: ' . $url);
     exit;
 }
@@ -437,7 +440,7 @@ function getAuditLogs(PDO $db, string $search = '', string $action = '', string 
     }
     if ($entityType) {
         $sql .= " AND al.entity_type = ?";
-        $params[] = $entityType;za
+        $params[] = $entityType;
     }
     if ($from) {
         $sql .= " AND al.created_at >= ?";

@@ -2,7 +2,8 @@
 
 declare(strict_types=1);
 
-$user = $_SESSION['user'];
+$user = $_SESSION['user'] ?? [];
+$userRole = $_SESSION['user']['role'] ?? userRole();
 $receiptNumber = $_GET['receipt'] ?? $_POST['receipt'] ?? '';
 $sale = null;
 $saleItems = [];
@@ -27,6 +28,11 @@ if ($receiptNumber) {
 
 // Handle submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $csrf = $_POST['_csrf'] ?? '';
+    if (!validate_csrf($csrf)) {
+        $error = 'Invalid security token. Please refresh and try again.';
+    }
+
     $receiptNumber = $_POST['receipt'] ?? '';
     $reason = $_POST['reason'] ?? '';
     $resolution = $_POST['resolution'] ?? '';
@@ -177,12 +183,12 @@ if ($userRole === 'cashier') {
     </div>
     <form method="get" class="search-bar">
         <input type="hidden" name="page" value="returns">
-        <input type="text" name="receipt" class="form-control" placeholder="Enter receipt number..." value="<?= e($receiptNumber) ?>" style="min-width:250px">
+        <input type="text" id="receipt-search" name="receipt" class="form-control" placeholder="Enter receipt number..." value="<?= e($receiptNumber) ?>" style="min-width:250px" aria-label="Receipt number">
         <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Look Up</button>
     </form>
     <?php if (!empty($recentSales)): ?>
-        <div style="margin-top:12px;font-size:13px;color:var(--gray-500)">Recent sales:</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        <div class="mt-12 fs-13 text-muted">Recent sales:</div>
+        <div class="d-flex flex-wrap gap-6 mt-6">
             <?php foreach ($recentSales as $rs): ?>
                 <a href="?page=returns&receipt=<?= e($rs['receipt_number']) ?>" class="btn btn-sm btn-outline"><?= e($rs['receipt_number']) ?></a>
             <?php endforeach; ?>
@@ -194,10 +200,11 @@ if ($userRole === 'cashier') {
 <div class="card">
     <div class="card-header">
         <h2><i class="fas fa-receipt"></i> Sale: <?= e($sale['receipt_number']) ?></h2>
-        <span style="font-size:14px;color:var(--gray-500)"><?= e($sale['cashier_name']) ?> &middot; <?= e(date('Y-m-d H:i', strtotime($sale['created_at']))) ?></span>
+        <span class="fs-14 text-muted"><?= e($sale['cashier_name']) ?> &middot; <?= e(date('Y-m-d H:i', strtotime($sale['created_at']))) ?></span>
     </div>
 
     <form method="post" id="return-form" onsubmit="return validateReturn()">
+        <?= csrf_field() ?>
         <input type="hidden" name="receipt" value="<?= e($receiptNumber) ?>">
         <input type="hidden" name="action" value="submit_return">
 
@@ -218,18 +225,18 @@ if ($userRole === 'cashier') {
             </table>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
-            <div class="form-group" style="margin:0">
-                <label>Reason</label>
-                <select name="reason" class="form-control" required onchange="toggleResolution()">
+        <div class="form-row mt-16">
+            <div class="form-group m-0">
+                <label for="return-reason">Reason</label>
+                <select id="return-reason" name="reason" class="form-control" required onchange="toggleResolution()">
                     <option value="">Select reason...</option>
                     <option value="return">Return (customer brought back)</option>
                     <option value="damage">Damage (item is damaged)</option>
                 </select>
             </div>
-            <div class="form-group" style="margin:0" id="resolution-group" style="display:none">
-                <label>Resolution</label>
-                <select name="resolution" class="form-control" required onchange="toggleExchange()">
+            <div class="form-group m-0 d-none" id="resolution-group">
+                <label for="return-resolution">Resolution</label>
+                <select id="return-resolution" name="resolution" class="form-control" required onchange="toggleExchange()">
                     <option value="">Select resolution...</option>
                     <option value="refund">Refund</option>
                     <option value="exchange">Exchange item</option>
@@ -237,7 +244,7 @@ if ($userRole === 'cashier') {
             </div>
         </div>
 
-        <div id="refund-details" style="display:none;margin-top:16px">
+        <div id="refund-details" class="d-none mt-16">
             <div class="form-row">
                 <div class="form-group">
                     <label>Refund Amount</label>
@@ -246,11 +253,11 @@ if ($userRole === 'cashier') {
             </div>
         </div>
 
-        <div id="exchange-details" style="display:none;margin-top:16px">
+        <div id="exchange-details" class="d-none mt-16">
             <div class="form-row">
                 <div class="form-group">
-                    <label>Exchange Product</label>
-                    <select name="exchange_product_id" class="form-control">
+                    <label for="exchange-product">Exchange Product</label>
+                    <select id="exchange-product" name="exchange_product_id" class="form-control">
                         <option value="">Select product...</option>
                         <?php foreach ($products as $p): ?>
                             <option value="<?= (int) $p['id'] ?>" data-stock="<?= (int) $p['stock_quantity'] ?>">
@@ -260,21 +267,21 @@ if ($userRole === 'cashier') {
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Exchange Quantity</label>
-                    <input type="number" name="exchange_qty" class="form-control" min="1" value="1">
+                    <label for="exchange-qty">Exchange Quantity</label>
+                    <input type="number" id="exchange-qty" name="exchange_qty" class="form-control" min="1" value="1">
                 </div>
             </div>
         </div>
 
         <?php if ($userRole === 'admin'): ?>
-        <div class="form-group" style="margin-top:16px">
-            <label>Admin Notes (optional)</label>
-            <input type="text" name="admin_notes" class="form-control" placeholder="Notes about this return...">
+        <div class="form-group mt-16">
+            <label for="admin-notes">Admin Notes (optional)</label>
+            <input type="text" id="admin-notes" name="admin_notes" class="form-control" placeholder="Notes about this return...">
         </div>
         <?php endif; ?>
 
-        <div style="margin-top:16px;display:flex;gap:10px">
-            <button type="submit" class="btn btn-<?= $userRole === 'admin' ? 'success' : 'warning' ?>" style="justify-content:center;flex:1">
+        <div class="d-flex gap-10 mt-16">
+            <button type="submit" class="btn btn-<?= $userRole === 'admin' ? 'success' : 'warning' ?> flex-1 justify-center">
                 <i class="fas fa-<?= $userRole === 'admin' ? 'check' : 'paper-plane' ?>"></i>
                 <?= $userRole === 'admin' ? 'Process Return' : 'Submit for Approval' ?>
             </button>
@@ -309,8 +316,16 @@ if ($userRole === 'cashier') {
                             <td><?= money((float) $rq['refund_amount']) ?></td>
                             <td><?= e(date('Y-m-d H:i', strtotime($rq['created_at']))) ?></td>
                             <td>
-                                <a href="index.php?page=admin-returns&approve=<?= (int) $rq['id'] ?>" class="btn btn-sm btn-success" onclick="return confirm('Approve this return? Stock adjustments will be applied.')"><i class="fas fa-check"></i></a>
-                                <a href="index.php?page=admin-returns&reject=<?= (int) $rq['id'] ?>" class="btn btn-sm btn-danger" onclick="return confirm('Reject this return?')"><i class="fas fa-times"></i></a>
+                                <form method="post" action="index.php?page=admin-returns" style="display:inline" onsubmit="return confirm('Approve this return? Stock adjustments will be applied.')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="approve" value="<?= (int) $rq['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i></button>
+                                </form>
+                                <form method="post" action="index.php?page=admin-returns" style="display:inline" onsubmit="return confirm('Reject this return?')">
+                                    <?= csrf_field() ?>
+                                    <input type="hidden" name="reject" value="<?= (int) $rq['id'] ?>">
+                                    <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-times"></i></button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -326,19 +341,19 @@ function toggleResolution() {
     const reason = document.querySelector('select[name="reason"]').value;
     const group = document.getElementById('resolution-group');
     if (reason === 'return' || reason === 'damage') {
-        group.style.display = 'block';
+        group.classList.remove('d-none');
     } else {
-        group.style.display = 'none';
-        document.getElementById('refund-details').style.display = 'none';
-        document.getElementById('exchange-details').style.display = 'none';
+        group.classList.add('d-none');
+        document.getElementById('refund-details').classList.add('d-none');
+        document.getElementById('exchange-details').classList.add('d-none');
     }
 }
 
 function toggleExchange() {
     const resolution = document.querySelector('select[name="resolution"]').value;
     const reason = document.querySelector('select[name="reason"]').value;
-    document.getElementById('refund-details').style.display = (reason === 'return' && resolution === 'refund') ? 'block' : 'none';
-    document.getElementById('exchange-details').style.display = (resolution === 'exchange') ? 'block' : 'none';
+    document.getElementById('refund-details').classList.toggle('d-none', !(reason === 'return' && resolution === 'refund'));
+    document.getElementById('exchange-details').classList.toggle('d-none', resolution !== 'exchange');
 }
 
 function calcRefund() {

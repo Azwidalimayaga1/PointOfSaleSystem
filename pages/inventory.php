@@ -31,8 +31,8 @@ $products = $stmt->fetchAll();
 <div class="card">
     <form method="get" class="search-bar">
         <input type="hidden" name="page" value="inventory">
-        <input type="text" name="search" class="form-control" placeholder="Search products..." value="<?= e($search) ?>">
-        <select name="filter" class="form-control">
+        <input type="text" name="search" class="form-control" placeholder="Search products..." value="<?= e($search) ?>" aria-label="Search products">
+        <select name="filter" class="form-control" aria-label="Stock filter">
             <option value="">All Stock</option>
             <option value="low" <?= $filter === 'low' ? 'selected' : '' ?>>Low Stock</option>
             <option value="out" <?= $filter === 'out' ? 'selected' : '' ?>>Out of Stock</option>
@@ -58,7 +58,7 @@ $products = $stmt->fetchAll();
             </thead>
             <tbody>
                 <?php if (empty($products)): ?>
-                    <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--gray-400)">No products found.</td></tr>
+                    <tr><td colspan="7" class="text-center p-40 text-muted">No products found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($products as $p): ?>
                     <?php
@@ -86,24 +86,24 @@ $products = $stmt->fetchAll();
                             </span>
                         </td>
                         <td>
-                            <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-warning">
+                            <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-warning" title="Adjust stock for this product">
                                 <i class="fas fa-cubes"></i> Adjust
                             </a>
-                            <a href="index.php?page=product-form&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-primary">
+                            <a href="index.php?page=product-form&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-primary" title="Edit product">
                                 <i class="fas fa-edit"></i>
                             </a>
                         </td>
                     </tr>
                     <?php if ($isLow || $isOut): ?>
-                        <tr style="background:var(--bg-danger-light)">
-                            <td colspan="7" style="padding:6px 14px;font-size:12px;color:var(--danger)">
+                        <tr class="bg-danger-row">
+                            <td colspan="7" class="info-row">
                                 <i class="fas fa-exclamation-circle"></i>
                                 <?php if ($isOut): ?>
                                     This product is out of stock!
                                 <?php else: ?>
                                     Low stock: only <?= (int) $p['stock_quantity'] ?> remaining (threshold: <?= (int) $p['low_stock_threshold'] ?>)
                                 <?php endif; ?>
-                                <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" style="margin-left:8px">Restock now</a>
+                                <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" class="ml-8">Restock now</a>
                             </td>
                         </tr>
                     <?php endif; ?>

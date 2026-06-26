@@ -25,10 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $userId = (int) ($_POST['user_id'] ?? 0);
 
+    $csrf = $_POST['_csrf'] ?? '';
+    if (!validate_csrf($csrf)) {
+        $errors[] = 'Invalid security token. Please refresh and try again.';
+    }
+
     if (!$username) $errors[] = 'Username is required.';
     if (!$fullName) $errors[] = 'Full name is required.';
     if (!$userId && !$password) $errors[] = 'Password is required for new users.';
-    if ($password && strlen($password) < 6) $errors[] = 'Password must be at least 6 characters.';
+    if ($password && strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
 
     // Check unique username
     $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ? AND id != ?");
@@ -38,6 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Prevent store_admin from assigning system admin role
     if (!$isSystemAdmin && $role === 'admin') {
         $errors[] = 'You do not have permission to assign the System Admin role.';
+    }
+
+    // Prevent store_admin from creating other store_admin users (privilege escalation)
+    if ($currentUserRole === 'store_admin' && in_array($role, ['store_admin', 'admin'], true)) {
+        $errors[] = 'You do not have permission to create or assign the Store Admin role.';
     }
 
     if (empty($errors)) {
@@ -84,6 +94,7 @@ $u = $editUser;
 
 <div class="card" style="max-width:600px">
     <form method="post">
+        <?= csrf_field() ?>
         <input type="hidden" name="user_id" value="<?= (int) ($u['id'] ?? 0) ?>">
         <div class="form-group">
             <label for="username">Username</label>
@@ -115,7 +126,7 @@ $u = $editUser;
         </div>
         <div class="form-group">
             <label for="password"><?= $u ? 'New Password (leave blank to keep current)' : 'Password' ?></label>
-            <input type="password" id="password" name="password" class="form-control" minlength="6" <?= $u ? '' : 'required' ?>>
+            <input type="password" id="password" name="password" class="form-control" minlength="8" <?= $u ? '' : 'required' ?>>
         </div>
         <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> <?= $u ? 'Update User' : 'Add User' ?></button>
     </form>

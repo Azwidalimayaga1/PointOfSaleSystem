@@ -5,8 +5,8 @@ declare(strict_types=1);
 $saleId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if (!$saleId) redirect('index.php?page=dashboard');
 
-$stmt = $db->prepare("SELECT * FROM sales WHERE id = ?");
-$stmt->execute([$saleId]);
+$stmt = $db->prepare("SELECT * FROM sales WHERE id = ? AND store_id = ?");
+$stmt->execute([$saleId, activeStoreId()]);
 $sale = $stmt->fetch();
 
 if (!$sale) redirect('index.php?page=dashboard');
@@ -58,42 +58,42 @@ $items = $stmt->fetchAll();
     </table>
 
     <div class="receipt-total">
-        <div style="display:flex;justify-content:space-between">
+        <div class="flex-between">
             <span>Subtotal</span>
             <span><?= money((float) $sale['subtotal']) ?></span>
         </div>
         <?php if ((float) $sale['discount'] > 0): ?>
-        <div style="display:flex;justify-content:space-between">
-            <span>Discount (<?= (int) $sale['discount_type'] === 0 ? '0' : '0' ?>%)</span>
+        <div class="flex-between">
+            <span>Discount<?php if ($sale['discount_type'] === 'percentage'): ?> (<?= round(((float) $sale['discount'] / ((float) $sale['subtotal'] > 0 ? (float) $sale['subtotal'] : 1)) * 100) ?>%)<?php endif; ?></span>
             <span>-<?= money((float) $sale['discount']) ?></span>
         </div>
         <?php endif; ?>
-        <div style="display:flex;justify-content:space-between">
+        <div class="flex-between">
             <span>VAT (<?= (float) $sale['tax_rate'] ?>%)</span>
             <span><?= money((float) $sale['tax']) ?></span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;border-top:2px solid var(--gray-800);padding-top:8px;margin-top:8px">
+        <div class="flex-between fs-18 fw-bold" style="border-top:2px solid var(--gray-800);padding-top:8px;margin-top:8px">
             <span>Total</span>
             <span><?= money((float) $sale['total']) ?></span>
         </div>
     </div>
 
-    <div style="margin-top:12px">
-        <div style="display:flex;justify-content:space-between">
+    <div class="mt-12">
+        <div class="flex-between">
             <span>Payment: <?= e(ucfirst($sale['payment_method'])) ?></span>
         </div>
         <?php if ((float) $sale['cash_amount'] > 0): ?>
-            <div style="display:flex;justify-content:space-between">
+            <div class="flex-between">
                 <span>Cash</span><span><?= money((float) $sale['cash_amount']) ?></span>
             </div>
         <?php endif; ?>
         <?php if ((float) $sale['card_amount'] > 0): ?>
-            <div style="display:flex;justify-content:space-between">
+            <div class="flex-between">
                 <span>Card</span><span><?= money((float) $sale['card_amount']) ?></span>
             </div>
         <?php endif; ?>
         <?php if ((float) $sale['change_amount'] > 0): ?>
-            <div style="display:flex;justify-content:space-between">
+            <div class="flex-between">
                 <span>Change</span><span><?= money((float) $sale['change_amount']) ?></span>
             </div>
         <?php endif; ?>

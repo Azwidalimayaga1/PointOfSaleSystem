@@ -19,6 +19,10 @@ if ($id > 0) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        $errors[] = 'Invalid security token. Please refresh and try again.';
+    }
+
     $name = trim($_POST['name'] ?? '');
     $address = trim($_POST['address'] ?? '');
     $contact = trim($_POST['contact'] ?? '');

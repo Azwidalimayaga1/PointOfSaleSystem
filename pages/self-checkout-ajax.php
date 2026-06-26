@@ -188,10 +188,10 @@ try {
             $mime = finfo_buffer($finfo, $decoded);
             finfo_close($finfo);
             if (in_array($mime, ['image/jpeg', 'image/png'], true)) {
-                $photoDir = __DIR__ . '/../data/captured_photos';
+                $photoDir = __DIR__ . '/../captured_photos';
                 if (!is_dir($photoDir)) {
                     @mkdir($photoDir, 0755, true);
-                    @file_put_contents($photoDir . '/.htaccess', "Deny from all\n");
+                    @file_put_contents($photoDir . '/.htaccess', "Require all denied\n");
                 }
                 $photoFile = $photoDir . '/sale_' . $saleId . '.jpg';
                 @file_put_contents($photoFile, $decoded);

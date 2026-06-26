@@ -46,14 +46,14 @@ $messages = getUserMessages($db, $userId);
 
 <div class="grid-2">
     <div class="card">
-        <h2 style="margin-bottom:16px">Send Message to Admin</h2>
+        <h2 class="mb-16">Send Message to Admin</h2>
         <form method="post">
             <div class="form-group">
                 <label for="message">Message</label>
                 <textarea id="message" name="message" class="form-control" rows="4" placeholder="Type your message here..." required></textarea>
             </div>
             <div class="form-group">
-                <label for="password">Confirm Password <span style="font-weight:400;color:var(--gray-400)">(re-enter to verify)</span></label>
+                <label for="password">Confirm Password <span class="fw-normal text-muted">(re-enter to verify)</span></label>
                 <input type="password" id="password" name="password" class="form-control" required>
             </div>
             <button type="submit" name="send_message" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Send Message</button>
@@ -61,21 +61,21 @@ $messages = getUserMessages($db, $userId);
     </div>
 
     <div class="card">
-        <h2 style="margin-bottom:16px">Sent Messages</h2>
+        <h2 class="mb-16">Sent Messages</h2>
         <?php if (empty($messages)): ?>
             <p class="muted">No messages sent yet.</p>
         <?php else: ?>
             <?php foreach ($messages as $msg): ?>
-                <div style="padding:14px;border:1px solid var(--gray-200);border-radius:var(--radius);margin-bottom:10px">
-                    <div style="display:flex;justify-content:space-between;align-items:start;gap:12px">
-                        <div style="flex:1">
-                            <div style="font-size:14px;line-height:1.5"><?= nl2br(e($msg['message'])) ?></div>
-                            <div style="font-size:12px;color:var(--gray-400);margin-top:6px">
+                <div class="p-14 border rounded mb-10">
+                    <div class="d-flex justify-between" style="align-items:start;gap:12px">
+                        <div class="flex-1">
+                            <div class="fs-14" style="line-height:1.5"><?= nl2br(e($msg['message'])) ?></div>
+                            <div class="fs-12 text-muted mt-6">
                                 <i class="far fa-clock"></i> <?= e(date('Y-m-d H:i', strtotime($msg['created_at']))) ?>
                                 <?php if ((int) $msg['is_read']): ?>
-                                    <span class="badge badge-success" style="margin-left:8px">Read</span>
+                                    <span class="badge badge-success ml-8">Read</span>
                                 <?php else: ?>
-                                    <span class="badge badge-warning" style="margin-left:8px">Unread</span>
+                                    <span class="badge badge-warning ml-8">Unread</span>
                                 <?php endif; ?>
                             </div>
                         </div>

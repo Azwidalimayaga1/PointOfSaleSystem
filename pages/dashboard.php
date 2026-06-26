@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+$userRole = $_SESSION['user']['role'] ?? userRole();
 $todaySales = getTodaySales($db);
 $lowStock = getLowStockProducts($db);
 $recentSales = getRecentSales($db, 5, $userRole === 'cashier' ? userName() : '');
@@ -27,7 +28,7 @@ if ($userRole === 'admin') {
     $allTodaySales = $stmt->fetch();
     $stmt = $db->query("SELECT COUNT(*) FROM products WHERE stock_quantity <= low_stock_threshold AND status = 'active'");
     $allLowStockCount = (int) $stmt->fetchColumn();
-    $stmt = $db->query("SELECT COUNT(*) FROM stores");
+    $stmt = $db->query("SELECT COUNT(*) FROM stores WHERE status = 'active'");
     $storeCount = (int) $stmt->fetchColumn();
 }
 
@@ -40,66 +41,73 @@ $remaining = max(0, $dailyTarget - $todayTotal);
 if ($percentage >= 70) {
     $statusText = 'Excellent Sales Today';
     $barColor = 'var(--success)';
+    $barClass = 'success';
 } elseif ($percentage >= 40) {
     $statusText = 'Good Progress';
     $barColor = 'var(--warning)';
+    $barClass = 'warning';
 } elseif ($percentage > 0) {
     $statusText = 'Slow Morning';
     $barColor = 'var(--danger)';
+    $barClass = 'danger';
 } else {
     $statusText = 'No sales yet today';
     $barColor = 'var(--gray-400)';
+    $barClass = '';
 }
 ?>
+
+<!-- Dashboard Header -->
 <div class="page-header">
-    <h1>Dashboard</h1>
-    <span class="badge badge-info"><?= date('l, F j, Y') ?></span>
+    <h1><i class="fas fa-chart-bar"></i> Dashboard</h1>
+    <span class="badge badge-info fs-12"><?= date('l, F j, Y') ?></span>
 </div>
 
+<!-- Stats Cards -->
 <div class="stats-grid">
     <div class="stat-card">
-        <div class="stat-icon blue"><i class="fas fa-dollar-sign"></i></div>
+        <div class="stat-icon blue"><i class="fas fa-wallet"></i></div>
         <div class="stat-info">
-            <h3><?= money((float) ($userRole === 'admin' ? ($allTodaySales['total'] ?? 0) : $todaySales['total'])) ?></h3>
+            <h3 class="stat-value"><?= money((float) ($userRole === 'admin' ? ($allTodaySales['total'] ?? 0) : $todaySales['total'])) ?></h3>
             <p><?= $userRole === 'admin' ? 'All Stores Today' : "Today's Sales" ?></p>
         </div>
     </div>
     <div class="stat-card">
         <div class="stat-icon green"><i class="fas fa-receipt"></i></div>
         <div class="stat-info">
-            <h3><?= (int) ($userRole === 'admin' ? ($allTodaySales['count'] ?? 0) : $todaySales['count']) ?></h3>
+            <h3 class="stat-value"><?= (int) ($userRole === 'admin' ? ($allTodaySales['count'] ?? 0) : $todaySales['count']) ?></h3>
             <p><?= $userRole === 'admin' ? 'Transactions All Stores' : 'Transactions Today' ?></p>
         </div>
     </div>
     <?php if ($userRole === 'admin'): ?>
     <div class="stat-card">
-        <div class="stat-icon green"><i class="fas fa-store"></i></div>
+        <div class="stat-icon purple"><i class="fas fa-store"></i></div>
         <div class="stat-info">
-            <h3><?= $storeCount ?></h3>
+            <h3 class="stat-value"><?= $storeCount ?></h3>
             <p>Active Stores</p>
         </div>
     </div>
     <div class="stat-card">
-        <div class="stat-icon yellow"><i class="fas fa-boxes"></i></div>
+        <div class="stat-icon red"><i class="fas fa-exclamation-triangle"></i></div>
         <div class="stat-info">
-            <h3><?= $allLowStockCount ?></h3>
+            <h3 class="stat-value"><?= $allLowStockCount ?></h3>
             <p>Low Stock Items</p>
         </div>
     </div>
     <?php elseif ($userRole !== 'cashier'): ?>
     <div class="stat-card">
-        <div class="stat-icon yellow"><i class="fas fa-boxes"></i></div>
+        <div class="stat-icon yellow"><i class="fas fa-exclamation-triangle"></i></div>
         <div class="stat-info">
-            <h3><?= count($lowStock) ?></h3>
+            <h3 class="stat-value"><?= count($lowStock) ?></h3>
             <p>Low Stock Items</p>
         </div>
     </div>
     <?php endif; ?>
     <div class="stat-card">
-        <div class="stat-icon purple"><i class="fas fa-users"></i></div>
+        <div class="stat-icon purple"><i class="fas fa-user-shield"></i></div>
         <div class="stat-info">
-            <h3><?= e(ucfirst(userRole() ?? '')) ?></h3>
-            <p>Logged in as <?= e(userName() ?? '') ?></p>
+            <h3 class="stat-value" style="font-size:16px"><?= e(ucfirst(userRole() ?? '')) ?></h3>
+            <p><?= e(userName() ?? '') ?></p>
         </div>
     </div>
 </div>
@@ -114,48 +122,51 @@ foreach ($allStores as $s) {
 $perfPeriod = $_GET['perf_period'] ?? 'today';
 $rankings = getStorePerformanceRankings($db, $perfPeriod);
 ?>
-<div class="card" style="margin-bottom:20px">
+
+<!-- Stores Overview -->
+<div class="card">
     <div class="card-header">
         <h2><i class="fas fa-store"></i> Stores Overview</h2>
-        <a href="index.php?page=stores" class="btn btn-sm btn-primary"><i class="fas fa-cog"></i> Manage Stores</a>
+        <a href="index.php?page=stores" class="btn btn-sm btn-outline"><i class="fas fa-cog"></i> Manage Stores</a>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;padding:4px 0">
+    <div class="d-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">
         <?php foreach ($allStores as $s): ?>
         <?php $d = $storeData[$s['id']]; $isActive = (int) $s['id'] === ACTIVE_STORE_ID; ?>
-        <div style="border:1px solid <?= $isActive ? 'var(--primary)' : 'var(--gray-200)' ?>;border-radius:var(--radius);padding:16px;background:<?= $isActive ? 'var(--bg-active-light)' : 'var(--gray-50)' ?>">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-                <div>
-                    <strong style="font-size:15px"><?= e($s['name']) ?></strong>
+        <div class="store-card <?= $isActive ? 'active' : '' ?>">
+            <div class="flex-between mb-8">
+                <div class="d-flex align-center gap-6">
+                    <strong class="fs-14"><?= e($s['name']) ?></strong>
                     <?php if ($isActive): ?>
-                        <span class="badge badge-primary" style="margin-left:6px;font-size:11px">Active</span>
+                        <span class="badge badge-primary fs-10">Active</span>
                     <?php endif; ?>
                 </div>
-                <span style="font-size:13px;color:var(--gray-500)"><?= e($s['currency'] ?? 'R') ?> <?= (float) ($s['tax_rate'] ?? 15) ?>%</span>
+                <span class="fs-12 text-muted"><?= e($s['currency'] ?? 'R') ?> <?= (float) ($s['tax_rate'] ?? 15) ?>%</span>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+            <div class="store-stat-grid mb-8">
                 <div>
-                    <div style="font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px">Today Sales</div>
-                    <div style="font-size:18px;font-weight:700;color:var(--success)"><?= money($d['today_sales']) ?></div>
+                    <div class="text-label">Today Sales</div>
+                    <div class="fs-16 fw-bold text-success"><?= money($d['today_sales']) ?></div>
                 </div>
                 <div>
-                    <div style="font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px">Transactions</div>
-                    <div style="font-size:18px;font-weight:700"><?= $d['today_transactions'] ?> <span style="font-size:12px;color:var(--gray-400)">/ <?= $d['total_transactions'] ?></span></div>
+                    <div class="text-label">Transactions</div>
+                    <div class="fs-16 fw-bold"><?= $d['today_transactions'] ?></div>
                 </div>
                 <div>
-                    <div style="font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px">Products</div>
-                    <div style="font-size:18px;font-weight:700"><?= $d['product_count'] ?></div>
+                    <div class="text-label">Products</div>
+                    <div class="fs-16 fw-bold"><?= $d['product_count'] ?></div>
                 </div>
                 <div>
-                    <div style="font-size:11px;color:var(--gray-500);text-transform:uppercase;letter-spacing:0.5px">Low Stock</div>
-                    <div style="font-size:18px;font-weight:700;color:<?= $d['low_stock'] > 0 ? 'var(--danger)' : 'var(--success)' ?>"><?= $d['low_stock'] ?></div>
+                    <div class="text-label">Low Stock</div>
+                    <div class="fs-16 fw-bold <?= $d['low_stock'] > 0 ? 'text-danger' : 'text-success' ?>"><?= $d['low_stock'] ?></div>
                 </div>
             </div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <?php if (!$isActive): ?>
-                <a href="index.php?switch_store=<?= (int) $s['id'] ?>" class="btn btn-sm btn-primary" style="font-size:12px"><i class="fas fa-eye"></i> Switch to Store</a>
-                <?php endif; ?>
-                <a href="index.php?page=store-form&id=<?= (int) $s['id'] ?>" class="btn btn-sm btn-outline" style="font-size:12px"><i class="fas fa-edit"></i> Edit Store</a>
-            </div>
+            <?php if (!$isActive): ?>
+            <form method="post" action="index.php" style="display:inline">
+                <?= csrf_field() ?>
+                <input type="hidden" name="switch_store" value="<?= (int) $s['id'] ?>">
+                <button type="submit" class="btn btn-sm btn-primary fs-11"><i class="fas fa-eye"></i> Switch to Store</button>
+            </form>
+            <?php endif; ?>
         </div>
         <?php endforeach; ?>
     </div>
@@ -170,24 +181,32 @@ if (isset($_GET['run_backup'])) {
 }
 $systemHealth = getSystemHealth($db);
 $backupHistory = getBackupHistory($db, 5);
-$healthPeriods = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Month', 'year' => 'This Year'];
+
+$statusActive = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = 'active'")->fetchColumn();
+$statusPending = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = 'pending'")->fetchColumn();
+$statusInactive = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = 'inactive'")->fetchColumn();
 ?>
 
-<div class="grid-2" style="margin-bottom:20px">
+<div class="grid-2 mb-20">
+    <!-- Store Performance Rankings -->
     <div class="card">
         <div class="card-header">
-            <h2><i class="fas fa-trophy"></i> Store Performance Rankings</h2>
-            <form method="get" style="display:flex;gap:6px">
+            <h2><i class="fas fa-trophy"></i> Store Performance</h2>
+            <form method="get" class="d-flex gap-6">
                 <input type="hidden" name="page" value="dashboard">
-                <select name="perf_period" class="form-control" style="font-size:12px;padding:4px 8px" onchange="this.form.submit()">
-                    <?php foreach ($healthPeriods as $k => $v): ?>
-                    <option value="<?= $k ?>" <?= $perfPeriod === $k ? 'selected' : '' ?>><?= $v ?></option>
-                    <?php endforeach; ?>
+                <select name="perf_period" class="form-control fs-11" style="padding:4px 8px;width:auto" onchange="this.form.submit()" aria-label="Period">
+                    <option value="today" <?= $perfPeriod === 'today' ? 'selected' : '' ?>>Today</option>
+                    <option value="week" <?= $perfPeriod === 'week' ? 'selected' : '' ?>>This Week</option>
+                    <option value="month" <?= $perfPeriod === 'month' ? 'selected' : '' ?>>This Month</option>
+                    <option value="year" <?= $perfPeriod === 'year' ? 'selected' : '' ?>>This Year</option>
                 </select>
             </form>
         </div>
         <?php if (empty($rankings)): ?>
-        <p class="muted">No sales data for this period.</p>
+        <div class="empty-state">
+            <i class="fas fa-chart-line"></i>
+            <p>No sales data for this period.</p>
+        </div>
         <?php else: ?>
         <div class="table-container">
             <table>
@@ -196,9 +215,8 @@ $healthPeriods = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Mo
                         <th>#</th>
                         <th>Store</th>
                         <th>Revenue</th>
-                        <th>Transactions</th>
-                        <th>Avg Transaction</th>
-                        <th>Items Sold</th>
+                        <th>Sales</th>
+                        <th>Avg</th>
                         <th>Share</th>
                     </tr>
                 </thead>
@@ -206,17 +224,13 @@ $healthPeriods = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Mo
                     <?php $totalRevenue = array_sum(array_map(fn($rr) => (float) $rr['revenue'], $rankings)); ?>
                     <?php foreach ($rankings as $i => $r): ?>
                     <?php $share = $totalRevenue > 0 ? round(((float) $r['revenue'] / $totalRevenue) * 100, 1) : 0; ?>
-                    <tr style="<?= $i === 0 ? 'background:var(--bg-success-light)' : ($i === count($rankings) - 1 ? 'background:var(--bg-danger-light)' : '') ?>">
-                        <td style="font-weight:700;font-size:16px"><?= $i + 1 ?></td>
-                        <td><strong><?= e($r['name']) ?></strong>
-                            <?php if ($i === 0): ?><span class="badge badge-success" style="font-size:10px">TOP</span><?php endif; ?>
-                            <?php if ($i === count($rankings) - 1 && count($rankings) > 1): ?><span class="badge badge-danger" style="font-size:10px">LOW</span><?php endif; ?>
-                        </td>
+                    <tr>
+                        <td class="fw-bold"><?= $i + 1 ?></td>
+                        <td><strong><?= e($r['name']) ?></strong></td>
                         <td><strong><?= money((float) $r['revenue']) ?></strong></td>
                         <td><?= (int) $r['transactions'] ?></td>
                         <td><?= money((float) $r['avg_transaction']) ?></td>
-                        <td><?= (int) $r['items_sold'] ?></td>
-                        <td style="font-weight:700;color:<?= $share >= 50 ? 'var(--success)' : ($share >= 20 ? 'var(--warning)' : 'var(--gray-500)') ?>"><?= $share ?>%</td>
+                        <td><span class="badge badge-info"><?= $share ?>%</span></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -225,44 +239,42 @@ $healthPeriods = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Mo
         <?php endif; ?>
     </div>
 
+    <!-- System Health - Compact -->
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-heartbeat"></i> System Health</h2>
-            <a href="?page=dashboard&run_backup=1" class="btn btn-sm btn-primary"><i class="fas fa-database"></i> Run Backup</a>
+            <div class="d-flex gap-6">
+                <a href="?page=dashboard&run_backup=1" class="btn btn-sm btn-primary"><i class="fas fa-database"></i> Backup</a>
+            </div>
         </div>
         <?php if ($backupResult): ?>
-        <div class="alert alert-<?= $backupResult['success'] ? 'success' : 'danger' ?>" style="margin-bottom:12px"><?= e($backupResult['message']) ?></div>
+        <div class="alert alert-<?= $backupResult['success'] ? 'success' : 'danger' ?> mb-12 fs-12"><?= e($backupResult['message']) ?></div>
         <?php endif; ?>
-        <div style="display:grid;gap:10px">
+        <div class="health-widget">
             <?php
             $healthItems = [
                 'database' => ['Database', 'fa-database'],
-                'db_size' => ['Database Size', 'fa-hdd'],
-                'server_uptime' => ['Server Uptime', 'fa-clock'],
-                'memory' => ['PHP Memory', 'fa-microchip'],
                 'storage' => ['Disk Space', 'fa-save'],
                 'last_backup' => ['Last Backup', 'fa-archive'],
-                'failed_backups' => ['Failed Backups', 'fa-exclamation-triangle'],
+                'memory' => ['PHP Memory', 'fa-microchip'],
             ];
             ?>
             <?php foreach ($healthItems as $key => $item): ?>
             <?php $h = $systemHealth[$key] ?? ['status' => 'unknown', 'message' => 'N/A']; ?>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:8px;background:<?= $h['status'] === 'healthy' ? 'var(--gray-50)' : ($h['status'] === 'warning' ? 'var(--bg-warning-light)' : 'var(--bg-danger-light)') ?>;border:1px solid <?= $h['status'] === 'healthy' ? 'var(--gray-200)' : ($h['status'] === 'warning' ? 'var(--border-warning)' : 'var(--border-danger)') ?>">
-                <div style="display:flex;align-items:center;gap:8px">
-                    <span style="width:10px;height:10px;border-radius:50%;background:<?= $h['status'] === 'healthy' ? 'var(--success)' : ($h['status'] === 'warning' ? 'var(--warning)' : 'var(--danger)') ?>"></span>
-                    <i class="fas <?= $item[1] ?>" style="color:var(--gray-500);width:16px;text-align:center"></i>
-                    <span style="font-size:13px;font-weight:600"><?= e($item[0]) ?></span>
-                </div>
-                <span style="font-size:12px;color:var(--gray-600);text-align:right;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= e($h['message']) ?>"><?= e($h['message']) ?></span>
+            <div class="health-item">
+                <span class="status-dot <?= $h['status'] === 'healthy' ? 'healthy' : ($h['status'] === 'warning' ? 'warning' : 'danger') ?>"></span>
+                <span class="health-label"><?= e($item[0]) ?></span>
+                <span class="health-value"><?= e($h['message']) ?></span>
             </div>
             <?php endforeach; ?>
         </div>
-
         <?php if (!empty($backupHistory)): ?>
-        <div style="margin-top:12px">
-            <h3 style="font-size:14px;margin-bottom:8px"><i class="fas fa-history"></i> Recent Backups</h3>
-            <div class="table-container">
-                <table style="font-size:12px">
+        <details class="mt-12">
+            <summary class="fs-12 text-muted cursor-pointer" style="list-style:none">
+                <i class="fas fa-chevron-right fs-10 mr-4"></i> Backup History
+            </summary>
+            <div class="table-container mt-8">
+                <table style="font-size:11px">
                     <thead>
                         <tr>
                             <th>Date</th>
@@ -274,8 +286,8 @@ $healthPeriods = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Mo
                     <tbody>
                         <?php foreach ($backupHistory as $b): ?>
                         <tr>
-                            <td><?= e(date('Y-m-d H:i', strtotime($b['created_at']))) ?></td>
-                            <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= e($b['filename']) ?></td>
+                            <td class="nowrap"><?= e(date('Y-m-d H:i', strtotime($b['created_at']))) ?></td>
+                            <td class="text-truncate" style="max-width:100px"><?= e($b['filename']) ?></td>
                             <td><?= $b['file_size'] > 0 ? round((int) $b['file_size'] / 1024, 1) . ' KB' : '—' ?></td>
                             <td><span class="badge <?= $b['status'] === 'completed' ? 'badge-success' : 'badge-danger' ?>"><?= e($b['status']) ?></span></td>
                         </tr>
@@ -283,47 +295,202 @@ $healthPeriods = ['today' => 'Today', 'week' => 'This Week', 'month' => 'This Mo
                     </tbody>
                 </table>
             </div>
+        </details>
+        <?php endif; ?>
+        <?php if (isset($systemHealth['server_uptime'])): ?>
+        <div class="mt-8 fs-11 text-muted text-right">Server Uptime: <?= e($systemHealth['server_uptime']['message']) ?></div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- Today's Sales by Store Chart + Store Status doughnut -->
+<div class="grid-2 mb-20">
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-chart-bar"></i> Today's Sales by Store</h2>
+        </div>
+        <?php if (empty($allStores) || array_sum(array_map(fn($s) => (float) ($storeData[$s['id']]['today_sales'] ?? 0), $allStores)) === 0): ?>
+        <div class="empty-state">
+            <i class="fas fa-chart-bar"></i>
+            <p>No sales yet today. Transactions will appear here once sales are made.</p>
+        </div>
+        <?php else: ?>
+        <div style="height:240px">
+            <canvas id="dashSalesByStoreChart" class="w-full h-full"></canvas>
+        </div>
+        <?php endif; ?>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-chart-pie"></i> Store Status</h2>
+        </div>
+        <?php if ($statusActive === 0 && $statusPending === 0 && $statusInactive === 0): ?>
+        <div class="empty-state">
+            <i class="fas fa-chart-pie"></i>
+            <p>No stores configured yet.</p>
+        </div>
+        <?php else: ?>
+        <div class="d-flex justify-center" style="height:240px">
+            <canvas id="dashStatusChart" style="max-width:260px;height:100%"></canvas>
         </div>
         <?php endif; ?>
     </div>
 </div>
-<?php endif; ?>
 
+<!-- Products by Store Chart -->
+<div class="card mb-20">
+    <div class="card-header">
+        <h2><i class="fas fa-boxes"></i> Products by Store</h2>
+    </div>
+    <?php if (empty($allStores)): ?>
+    <div class="empty-state">
+        <i class="fas fa-boxes"></i>
+        <p>No store data available yet.</p>
+    </div>
+    <?php else: ?>
+    <div style="height:240px">
+        <canvas id="dashProductsByStoreChart" class="w-full h-full"></canvas>
+    </div>
+    <?php endif; ?>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    <?php if (!empty($allStores)): ?>
+    var salesCtx = document.getElementById('dashSalesByStoreChart');
+    if (salesCtx) {
+        new Chart(salesCtx.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode(array_map(fn($s) => $s['name'], $allStores)) ?>,
+                datasets: [{
+                    label: "Today's Sales",
+                    data: <?= json_encode(array_map(fn($s) => (float) ($storeData[$s['id']]['today_sales'] ?? 0), $allStores)) ?>,
+                    backgroundColor: <?= json_encode(array_map(fn($s) => (int) $s['id'] === ACTIVE_STORE_ID ? '#3b82f6' : '#10b981', $allStores)) ?>,
+                    borderRadius: 4,
+                }, {
+                    label: 'Transactions',
+                    data: <?= json_encode(array_map(fn($s) => (int) ($storeData[$s['id']]['today_transactions'] ?? 0), $allStores)) ?>,
+                    backgroundColor: 'rgba(59,130,246,0.1)',
+                    borderColor: '#3b82f6', borderWidth: 2, borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, padding: 12 } }, tooltip: { backgroundColor: '#1e293b', cornerRadius: 6, padding: 8 } },
+                scales: { y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }, x: { grid: { display: false } } }
+            }
+        });
+    }
+
+    var statusCtx = document.getElementById('dashStatusChart');
+    if (statusCtx) {
+        new Chart(statusCtx.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+                labels: ['Active', 'Pending', 'Inactive'],
+                datasets: [{
+                    data: [<?= (int) $statusActive ?>, <?= (int) $statusPending ?>, <?= (int) $statusInactive ?>],
+                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
+                    borderWidth: 0,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, boxWidth: 8 } },
+                    tooltip: { backgroundColor: '#1e293b', cornerRadius: 6, padding: 8 }
+                },
+                cutout: '70%',
+            }
+        });
+    }
+
+    var prodCtx = document.getElementById('dashProductsByStoreChart');
+    if (prodCtx) {
+        new Chart(prodCtx.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: <?= json_encode(array_map(fn($s) => $s['name'], $allStores)) ?>,
+                datasets: [{
+                    label: 'Products',
+                    data: <?= json_encode(array_map(fn($s) => (int) ($storeData[$s['id']]['product_count'] ?? 0), $allStores)) ?>,
+                    backgroundColor: '#8b5cf6',
+                    borderRadius: 4,
+                }, {
+                    label: 'Low Stock',
+                    data: <?= json_encode(array_map(fn($s) => (int) ($storeData[$s['id']]['low_stock'] ?? 0), $allStores)) ?>,
+                    backgroundColor: '#ef4444',
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: true, position: 'top', labels: { boxWidth: 12, padding: 12 } }, tooltip: { backgroundColor: '#1e293b', cornerRadius: 6, padding: 8 } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(0,0,0,0.06)' } }, x: { grid: { display: false } } }
+            }
+        });
+    }
+    <?php endif; ?>
+});
+</script>
+<?php endif; /* admin */ ?>
+
+<!-- Stock Alerts and Recent Sales (admin) -->
 <?php if ($userRole === 'admin'): ?>
 <?php
-$allLowStock = getAllLowStockProducts($db, 20);
-$allRecentSales = getRecentSalesAllStores($db, 10);
+$allLowStock = getAllLowStockProducts($db, 30);
+$allRecentSales = getRecentSalesAllStores($db, 8);
 ?>
-<div class="grid-2" style="margin-bottom:20px">
+<div class="grid-2 mb-20">
+    <!-- Stock Alerts -->
     <div class="card">
         <div class="card-header">
-            <h2><i class="fas fa-exclamation-triangle"></i> Low Stock Across All Stores</h2>
+            <h2><i class="fas fa-exclamation-triangle"></i> Stock Alerts</h2>
             <a href="index.php?page=inventory" class="btn btn-sm btn-outline"><i class="fas fa-boxes"></i> Inventory</a>
         </div>
         <?php if (empty($allLowStock)): ?>
-            <p class="muted">All products are well-stocked across all stores.</p>
-        <?php else: ?>
+        <div class="empty-state">
+            <i class="fas fa-check-circle text-success"></i>
+            <p>All products are well-stocked across all stores.</p>
+        </div>
+        <?php else:
+        // Categorize stock
+        $highAlert = array_filter($allLowStock, fn($p) => (int) $p['stock_quantity'] === 0 || $p['status'] !== 'active');
+        $lowStockItems = array_filter($allLowStock, fn($p) => (int) $p['stock_quantity'] > 0 && (int) $p['stock_quantity'] <= (int) $p['low_stock_threshold']);
+        ?>
+        <div class="mb-8 d-flex gap-6 flex-wrap">
+            <span class="badge badge-danger">High Alert (<?= count($highAlert) ?>)</span>
+            <span class="badge badge-warning">Low Stock (<?= count($lowStockItems) ?>)</span>
+        </div>
         <div class="table-container">
             <table>
                 <thead>
                     <tr>
-                        <th>Store</th>
                         <th>Product</th>
+                        <th>Store</th>
                         <th>Stock</th>
                         <th>Threshold</th>
+                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($allLowStock as $p): ?>
+                    <?php foreach ($highAlert as $p): ?>
                     <tr>
-                        <td><span class="badge badge-primary"><?= e($p['store_name']) ?></span></td>
                         <td><strong><?= e($p['name']) ?></strong></td>
-                        <td>
-                            <span class="badge <?= (int) $p['stock_quantity'] === 0 ? 'badge-danger' : 'badge-warning' ?>">
-                                <?= (int) $p['stock_quantity'] ?>
-                            </span>
-                        </td>
+                        <td><span class="badge badge-primary"><?= e($p['store_name']) ?></span></td>
+                        <td><span class="badge badge-danger stock-alert-pulse"><?= (int) $p['stock_quantity'] ?></span></td>
                         <td><?= (int) $p['low_stock_threshold'] ?></td>
+                        <td><span class="badge badge-danger"><?= $p['status'] !== 'active' ? 'Unavailable' : 'Out of Stock' ?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <?php foreach ($lowStockItems as $p): ?>
+                    <tr>
+                        <td><strong><?= e($p['name']) ?></strong></td>
+                        <td><span class="badge badge-primary"><?= e($p['store_name']) ?></span></td>
+                        <td><span class="badge badge-warning"><?= (int) $p['stock_quantity'] ?></span></td>
+                        <td><?= (int) $p['low_stock_threshold'] ?></td>
+                        <td><span class="badge badge-warning">Low Stock</span></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -332,13 +499,17 @@ $allRecentSales = getRecentSalesAllStores($db, 10);
         <?php endif; ?>
     </div>
 
+    <!-- Recent Sales -->
     <div class="card">
         <div class="card-header">
-            <h2><i class="fas fa-clock"></i> Recent Sales Across All Stores</h2>
-            <a href="index.php?page=sales" class="btn btn-sm btn-outline"><i class="fas fa-shopping-cart"></i> All Sales</a>
+            <h2><i class="fas fa-clock"></i> Recent Sales</h2>
+            <a href="index.php?page=sales" class="btn btn-sm btn-outline"><i class="fas fa-shopping-cart"></i> View All</a>
         </div>
         <?php if (empty($allRecentSales)): ?>
-            <p class="muted">No sales have been made yet.</p>
+        <div class="empty-state">
+            <i class="fas fa-shopping-cart"></i>
+            <p>No sales have been made yet.</p>
+        </div>
         <?php else: ?>
         <div class="table-container">
             <table>
@@ -347,6 +518,7 @@ $allRecentSales = getRecentSalesAllStores($db, 10);
                         <th>Receipt</th>
                         <th>Store</th>
                         <th>Cashier</th>
+                        <th>Payment</th>
                         <th>Total</th>
                         <th>Time</th>
                     </tr>
@@ -354,11 +526,12 @@ $allRecentSales = getRecentSalesAllStores($db, 10);
                 <tbody>
                     <?php foreach ($allRecentSales as $sale): ?>
                     <tr>
-                        <td><?= e($sale['receipt_number']) ?></td>
+                        <td class="nowrap"><?= e($sale['receipt_number']) ?></td>
                         <td><span class="badge badge-info"><?= e($sale['store_name']) ?></span></td>
                         <td><?= e($sale['cashier_name']) ?></td>
+                        <td><span class="badge badge-gray"><?= e(ucfirst($sale['payment_method'] ?? 'N/A')) ?></span></td>
                         <td><strong><?= money((float) $sale['total']) ?></strong></td>
-                        <td><?= e(date('H:i', strtotime($sale['created_at']))) ?></td>
+                        <td class="text-muted"><?= e(date('H:i', strtotime($sale['created_at']))) ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -370,34 +543,35 @@ $allRecentSales = getRecentSalesAllStores($db, 10);
 
 <?php else: /* Non-admin roles - manager, cashier, store_admin */ ?>
 
-<div class="grid-2">
+<!-- Sales Progress -->
+<div class="grid-2 mb-20">
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-chart-line"></i> Sales Progress</h2>
         </div>
-        <div style="display:grid;gap:14px">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="d-grid gap-12">
+            <div class="sales-progress-grid">
                 <div>
-                    <div style="font-size:13px;color:var(--gray-500)">Target</div>
-                    <div style="font-size:20px;font-weight:700"><?= money($dailyTarget) ?></div>
+                    <div class="fs-12 text-muted">Target</div>
+                    <div class="fs-18 fw-bold"><?= money($dailyTarget) ?></div>
                 </div>
                 <div>
-                    <div style="font-size:13px;color:var(--gray-500)">Current Sales</div>
-                    <div style="font-size:20px;font-weight:700;color:var(--primary)"><?= money($todayTotal) ?></div>
+                    <div class="fs-12 text-muted">Current Sales</div>
+                    <div class="fs-18 fw-bold text-primary"><?= money($todayTotal) ?></div>
                 </div>
                 <div>
-                    <div style="font-size:13px;color:var(--gray-500)">Remaining</div>
-                    <div style="font-size:20px;font-weight:700;color:<?= $remaining > 0 ? 'var(--danger)' : 'var(--success)' ?>"><?= money($remaining) ?></div>
+                    <div class="fs-12 text-muted">Remaining</div>
+                    <div class="fs-18 fw-bold <?= $remaining > 0 ? 'text-danger' : 'text-success' ?>"><?= money($remaining) ?></div>
                 </div>
                 <div>
-                    <div style="font-size:13px;color:var(--gray-500)">Completed</div>
-                    <div style="font-size:20px;font-weight:700"><?= $percentage ?>%</div>
+                    <div class="fs-12 text-muted">Completed</div>
+                    <div class="fs-18 fw-bold"><?= $percentage ?>%</div>
                 </div>
             </div>
-            <div style="background:var(--gray-100);border-radius:50px;height:14px;overflow:hidden;position:relative">
-                <div style="height:100%;border-radius:50px;width:<?= $percentage ?>%;background:<?= $barColor ?>;transition:width 1s ease"></div>
+            <div class="progress-bar lg">
+                <div class="progress-fill <?= $barClass ?>" style="width:<?= $percentage ?>%"></div>
             </div>
-            <div style="text-align:center;font-weight:600;font-size:15px;color:<?= $barColor ?>">
+            <div class="text-center fw-semibold fs-14" style="color:<?= $barColor ?>">
                 <i class="fas fa-<?= $percentage >= 70 ? 'trophy' : ($percentage >= 40 ? 'arrow-up' : ($percentage > 0 ? 'clock' : 'circle')) ?>"></i>
                 <?= e($statusText) ?>
             </div>
@@ -405,80 +579,79 @@ $allRecentSales = getRecentSalesAllStores($db, 10);
     </div>
 
     <?php if ($userRole !== 'cashier'): ?>
+    <!-- Low Stock Items -->
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-exclamation-triangle"></i> Low Stock Items</h2>
-            <div style="display:flex;gap:6px">
-                <button id="view-graph" class="btn btn-sm btn-primary" onclick="showLowStockView('graph')"><i class="fas fa-chart-bar"></i> Graph</button>
-                <button id="view-table" class="btn btn-sm btn-outline" onclick="showLowStockView('table')"><i class="fas fa-table"></i> Table</button>
-            </div>
         </div>
-        <div id="lowstock-graph" style="max-height:280px">
-            <?php if (empty($lowStock)): ?>
-                <p class="muted">All products are well-stocked.</p>
-            <?php else: ?>
-                <canvas id="lowStockChart"></canvas>
-            <?php endif; ?>
+        <?php if (empty($lowStock)): ?>
+        <div class="empty-state">
+            <i class="fas fa-check-circle text-success"></i>
+            <p>All products are well-stocked.</p>
         </div>
-        <div id="lowstock-table" style="display:none">
-            <?php if (empty($lowStock)): ?>
-                <p class="muted">All products are well-stocked.</p>
-            <?php else: ?>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Product</th>
-                                <th>Stock</th>
-                                <th>Threshold</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($lowStock as $p): ?>
-                                <tr>
-                                    <td><?= e($p['name']) ?></td>
-                                    <td>
-                                        <span class="badge <?= $p['stock_quantity'] == 0 ? 'badge-danger' : 'badge-warning' ?>">
-                                            <?= (int) $p['stock_quantity'] ?>
-                                        </span>
-                                    </td>
-                                    <td><?= (int) $p['low_stock_threshold'] ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-            <?php endif; ?>
+        <?php else: ?>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Stock</th>
+                        <th>Threshold</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($lowStock as $p):
+                        $sQty = (int) $p['stock_quantity'];
+                        $threshold = (int) $p['low_stock_threshold'];
+                        $pct = $threshold > 0 ? min(100, round(($sQty / $threshold) * 100)) : 0;
+                        $isOut = $sQty === 0;
+                        $isLow = $sQty > 0 && $sQty < $threshold;
+                    ?>
+                    <tr>
+                        <td><strong><?= e($p['name']) ?></strong></td>
+                        <td>
+                            <span class="stock-bar"><span class="stock-bar-fill <?= $isOut ? 'danger' : 'warning' ?>" style="width:<?= $pct ?>%"></span></span>
+                            <span class="badge <?= $isOut ? 'badge-danger' : 'badge-warning' ?>"><?= $sQty ?></span>
+                        </td>
+                        <td><?= $threshold ?></td>
+                        <td><span class="badge <?= $isOut ? 'badge-danger' : 'badge-warning' ?>"><?= $isOut ? 'Out of Stock' : 'Low Stock' ?></span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 </div>
 
 <?php if (!empty($cashierSales) && in_array($userRole, ['manager'], true)): ?>
+<!-- Cashier Progress -->
 <div class="card">
     <div class="card-header">
-        <h2><i class="fas fa-users"></i> Cashier Progress Today</h2>
+        <h2><i class="fas fa-users"></i> Today's Cashier Performance</h2>
     </div>
-    <div style="display:grid;gap:18px">
+    <div class="d-grid gap-14">
         <?php foreach ($cashierSales as $cs): ?>
             <?php
                 $csTotal = (float) $cs['total'];
                 $csPct = $dailyTarget > 0 ? min(100, round(($csTotal / $dailyTarget) * 100, 1)) : 0;
-                $csColor = $csPct >= 70 ? 'var(--success)' : ($csPct >= 40 ? 'var(--warning)' : 'var(--danger)');
+                $csClass = $csPct >= 70 ? 'success' : ($csPct >= 40 ? 'warning' : 'danger');
             ?>
             <div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <div class="flex-between mb-4">
                     <div>
-                        <strong style="font-size:15px"><i class="fas fa-user"></i> <?= e($cs['cashier_name']) ?></strong>
-                        <span style="font-size:13px;color:var(--gray-500);margin-left:10px"><?= (int) $cs['transactions'] ?> transactions</span>
+                        <strong class="fs-14"><i class="fas fa-user"></i> <?= e($cs['cashier_name']) ?></strong>
+                        <span class="fs-12 text-muted ml-8"><?= (int) $cs['transactions'] ?> transactions</span>
                     </div>
-                    <div style="text-align:right">
-                        <span style="font-weight:700;font-size:15px"><?= money($csTotal) ?></span>
-                        <span style="font-size:13px;color:var(--gray-500);margin-left:8px"><?= $csPct ?>%</span>
+                    <div class="text-right">
+                        <span class="fw-bold fs-14"><?= money($csTotal) ?></span>
+                        <span class="fs-12 text-muted ml-6"><?= $csPct ?>%</span>
                     </div>
                 </div>
-                <div style="background:var(--gray-100);border-radius:50px;height:10px;overflow:hidden">
-                    <div style="height:100%;border-radius:50px;width:<?= $csPct ?>%;background:<?= $csColor ?>;transition:width 1s ease"></div>
+                <div class="progress-bar">
+                    <div class="progress-fill <?= $csClass ?>" style="width:<?= $csPct ?>%"></div>
                 </div>
             </div>
         <?php endforeach; ?>
@@ -486,75 +659,51 @@ $allRecentSales = getRecentSalesAllStores($db, 10);
 </div>
 <?php endif; ?>
 
+<!-- Recent Sales (non-admin) -->
 <div class="card">
     <div class="card-header">
         <h2><i class="fas fa-clock"></i> Recent Sales</h2>
+        <a href="index.php?page=sales" class="btn btn-sm btn-outline"><i class="fas fa-shopping-cart"></i> View All</a>
     </div>
     <?php if (empty($recentSales)): ?>
-        <p class="muted">No sales yet.</p>
+    <div class="empty-state">
+        <i class="fas fa-shopping-cart"></i>
+        <p>No sales recorded today.</p>
+    </div>
     <?php else: ?>
-        <div class="table-container">
-            <table>
-                <thead>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Receipt #</th>
+                    <th>Cashier</th>
+                    <th>Payment</th>
+                    <th>Total</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($recentSales as $sale): ?>
                     <tr>
-                        <th>Receipt #</th>
-                        <th>Cashier</th>
-                        <th>Total</th>
-                        <th>Payment</th>
-                        <th>Time</th>
+                        <td class="nowrap"><?= e($sale['receipt_number']) ?></td>
+                        <td><?= e($sale['cashier_name']) ?></td>
+                        <td><span class="badge badge-gray"><?= e(ucfirst($sale['payment_method'] ?? 'N/A')) ?></span></td>
+                        <td><strong><?= money((float) $sale['total']) ?></strong></td>
+                        <td class="text-muted"><?= e(date('H:i', strtotime($sale['created_at']))) ?></td>
                     </tr>
-                </thead>
-                <tbody>
-                    <?php foreach ($recentSales as $sale): ?>
-                        <tr>
-                            <td><?= e($sale['receipt_number']) ?></td>
-                            <td><?= e($sale['cashier_name']) ?></td>
-                            <td><?= money((float) $sale['total']) ?></td>
-                            <td><span class="badge badge-info"><?= e(ucfirst($sale['payment_method'])) ?></span></td>
-                            <td><?= e(date('H:i', strtotime($sale['created_at']))) ?></td>
-                        </tr>
-                    <?php endforeach; ?>
-                </tbody>
-            </table>
-        </div>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
     <?php endif; ?>
 </div>
 
 <?php endif; /* end admin vs non-admin split */ ?>
 
-<?php if ($userRole !== 'admin' && !empty($lowStock) && $userRole !== 'cashier'): ?>
 <script>
-function showLowStockView(view) {
-    document.getElementById('lowstock-graph').style.display = view === 'graph' ? 'block' : 'none';
-    document.getElementById('lowstock-table').style.display = view === 'table' ? 'block' : 'none';
-    document.getElementById('view-graph').className = view === 'graph' ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline';
-    document.getElementById('view-table').className = view === 'table' ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-outline';
-}
-const chartEl = document.getElementById('lowStockChart');
-if (chartEl) {
-const ctx = chartEl.getContext('2d');
-new Chart(ctx, {
-    type: 'bar',
-    data: {
-        labels: [<?php foreach ($lowStock as $p): ?>'<?= e($p['name']) ?>',<?php endforeach; ?>],
-        datasets: [{
-            label: 'Current Stock',
-            data: [<?php foreach ($lowStock as $p): ?><?= (int) $p['stock_quantity'] ?>,<?php endforeach; ?>],
-            backgroundColor: [<?php foreach ($lowStock as $p): ?>'<?= (int) $p['stock_quantity'] === 0 ? '#dc2626' : ((int) $p['stock_quantity'] <= (int) ($p['low_stock_threshold'] / 2) ? '#f97316' : '#eab308') ?>',<?php endforeach; ?>],
-            borderColor: '#ffffff', borderWidth: 2, borderRadius: 6,
-        }, {
-            label: 'Threshold',
-            data: [<?php foreach ($lowStock as $p): ?><?= (int) $p['low_stock_threshold'] ?>,<?php endforeach; ?>],
-            backgroundColor: 'rgba(37, 99, 235, 0.15)',
-            borderColor: '#2563eb', borderWidth: 2, borderRadius: 6, borderDash: [5, 5],
-        }]
-    },
-    options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1f2937', titleFont: { size: 13 }, bodyFont: { size: 13 }, cornerRadius: 8, padding: 10 } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 }, grid: { color: 'rgba(0,0,0,0.05)' } }, x: { grid: { display: false }, ticks: { font: { size: 11 } } } }
-    }
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.stat-value').forEach(function (el) {
+        el.classList.add('animate');
+    });
 });
-}
 </script>
-<?php endif; ?>

@@ -4,6 +4,8 @@ if (!SELF_CHECKOUT_ENABLED) {
     redirect('index.php?page=login');
 }
 
+$exitPage = isLoggedIn() ? 'dashboard' : 'login';
+
 // Admin unlock logic
 $scLocked = !isset($_SESSION['sc_unlocked']) || $_SESSION['sc_unlocked'] !== true;
 $scUnlockError = '';
@@ -64,7 +66,6 @@ $categories = getCategories($db);
 $flash = $_SESSION['pos_flash'] ?? null;
 unset($_SESSION['pos_flash']);
 
-$exitPage = isLoggedIn() ? 'dashboard' : 'login';
 $selfCheckoutUserId = 0;
 try {
     $stmt = $db->prepare("SELECT id FROM users WHERE username = 'selfcheckout'");
@@ -88,6 +89,9 @@ try {
     <meta name="csrf-token" content="<?= e(csrf_token()) ?>">
     <title>Self Checkout &mdash; <?= e(STORE_NAME) ?></title>
     <script>if(localStorage.getItem('pos-theme')==='dark')document.documentElement.setAttribute('data-theme','dark')</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -103,8 +107,8 @@ try {
                 <div class="sc-lock-error"><?= e($scUnlockError) ?></div>
             <?php endif; ?>
             <form method="post">
-                <input type="text" name="sc_username" class="form-control" placeholder="Username" required autocomplete="off" autofocus>
-                <input type="password" name="sc_password" class="form-control" placeholder="Password" required>
+                <input type="text" id="sc-username" name="sc_username" class="form-control" placeholder="Username" required autocomplete="off" autofocus aria-label="Username">
+                <input type="password" id="sc-password" name="sc_password" class="form-control" placeholder="Password" required aria-label="Password">
                 <button type="submit" name="sc_unlock" class="btn btn-primary sc-lock-btn"><i class="fas fa-unlock"></i> Unlock</button>
             </form>
         </div>
@@ -116,7 +120,7 @@ try {
             <i class="fas fa-cash-register"></i>
             <span>Self Checkout &mdash; <?= e(STORE_NAME) ?></span>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div class="d-flex gap-8 align-center">
             <button class="btn-theme" onclick="toggleTheme()" title="Toggle theme" id="theme-toggle">
                 <i class="fas fa-moon"></i>
             </button>
@@ -132,8 +136,8 @@ try {
                 <div class="sc-lock-error" style="margin-bottom:12px"><?= e($scUnlockError) ?></div>
             <?php endif; ?>
             <form method="post" onsubmit="return document.getElementById('sc-exit-pw').value.length > 0">
-                <input type="text" name="sc_exit_username" class="form-control" style="margin-bottom:10px" placeholder="Username" required autocomplete="off">
-                <input type="password" id="sc-exit-pw" name="sc_exit_password" class="form-control" style="margin-bottom:16px" placeholder="Password" required>
+                <input type="text" id="sc-exit-user" name="sc_exit_username" class="form-control" style="margin-bottom:10px" placeholder="Username" required autocomplete="off" aria-label="Username">
+                <input type="password" id="sc-exit-pw" name="sc_exit_password" class="form-control" style="margin-bottom:16px" placeholder="Password" required aria-label="Password">
                 <div style="display:flex;gap:10px">
                     <button type="button" class="btn btn-outline sc-btn-lg" onclick="document.getElementById('sc-exit-modal').classList.remove('show')">Cancel</button>
                     <button type="submit" name="sc_exit_unlock" class="btn btn-danger sc-btn-lg"><i class="fas fa-sign-out-alt"></i> Exit</button>
@@ -207,8 +211,8 @@ try {
     <div class="sc-body">
         <div class="sc-products">
             <div class="sc-search">
-                <input type="text" id="sc-search" class="form-control" placeholder="Search products or scan barcode..." autofocus oninput="scFilter()">
-                <select id="sc-cat" class="form-control" onchange="scFilter()">
+                <input type="text" id="sc-search" class="form-control" placeholder="Search products or scan barcode..." autofocus oninput="scFilter()" aria-label="Search products">
+                <select id="sc-cat" class="form-control" onchange="scFilter()" aria-label="Category filter">
                     <option value="">All Categories</option>
                     <?php foreach ($categories as $cat): ?>
                         <option value="<?= e($cat) ?>"><?= e($cat) ?></option>
@@ -488,12 +492,12 @@ function scUpdate() {
                 <div class="sci-price">${fmt(item.price)}</div>
             </div>
             <div class="sci-qty">
-                <button onclick="scQty(${i},-1)">-</button>
+                <button onclick="scQty(${i},-1)" aria-label="Decrease quantity">-</button>
                 <span>${item.qty}</span>
-                <button onclick="scQty(${i},1)">+</button>
+                <button onclick="scQty(${i},1)" aria-label="Increase quantity">+</button>
             </div>
             <div class="sci-total">${fmt(lt)}</div>
-            <button class="sci-rm" onclick="scRm(${i})">&times;</button>
+            <button class="sci-rm" onclick="scRm(${i})" aria-label="Remove item">&times;</button>
         </div>`;
     });
     itemsEl.innerHTML = html;

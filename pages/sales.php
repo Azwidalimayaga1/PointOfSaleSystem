@@ -31,9 +31,9 @@ unset($_SESSION['pos_flash']);
 <div class="sales-layout">
     <div>
         <div class="card">
-            <div class="search-bar" style="margin-bottom:16px">
-                <input type="text" id="product-search" class="form-control" placeholder="Search products by name or barcode..." oninput="filterProducts()">
-                <select id="category-filter" class="form-control" onchange="filterProducts()">
+            <div class="search-bar mb-16">
+                <input type="text" id="product-search" class="form-control" placeholder="Search products by name or barcode..." oninput="filterProducts()" aria-label="Search products">
+                <select id="category-filter" class="form-control" onchange="filterProducts()" aria-label="Category filter">
                     <option value="">All Categories</option>
                     <?php foreach ($categories as $cat): ?>
                         <option value="<?= e($cat) ?>"><?= e($cat) ?></option>
@@ -88,15 +88,15 @@ unset($_SESSION['pos_flash']);
                 <span id="cart-total"><?= money(0) ?></span>
             </div>
         </div>
-        <div class="cart-actions" id="cart-actions" style="display:none">
-            <div class="form-group" style="margin:0">
-                <label style="font-size:13px">Discount (%)</label>
+        <div class="cart-actions d-flex flex-col gap-8" id="cart-actions" style="display:none">
+            <div class="form-group m-0">
+                <label for="discount-input" class="fs-13">Discount (%)</label>
                 <input type="number" id="discount-input" class="form-control" min="0" max="100" value="0" onchange="updateCart()" style="padding:8px">
             </div>
-            <button class="btn btn-success" style="justify-content:center" onclick="showPaymentModal()">
+            <button class="btn btn-success justify-center" onclick="showPaymentModal()">
                 <i class="fas fa-check"></i> Checkout
             </button>
-            <button class="btn btn-danger" style="justify-content:center" onclick="clearCart()">
+            <button class="btn btn-danger justify-center" onclick="clearCart()">
                 <i class="fas fa-trash"></i> Clear Cart
             </button>
         </div>
@@ -107,9 +107,8 @@ unset($_SESSION['pos_flash']);
 <div class="modal-overlay" id="payment-modal">
     <div class="modal">
         <h3><i class="fas fa-credit-card"></i> Complete Payment</h3>
-        <div id="payment-summary" style="margin-bottom:16px"></div>
-        <div class="form-group">
-            <label>Payment Method</label>
+        <div id="payment-summary" class="mb-16"></div>
+        <div class="form-group" role="radiogroup" aria-label="Payment method">
             <div class="payment-option">
                 <input type="radio" name="payment_method" id="pm-cash" value="cash" checked onchange="togglePayment()">
                 <label for="pm-cash"><i class="fas fa-money-bill"></i> Cash</label>
@@ -125,17 +124,17 @@ unset($_SESSION['pos_flash']);
         </div>
         <div class="mixed-inputs" id="mixed-inputs">
             <div class="form-group" style="margin:0">
-                <label>Cash Amount</label>
+                <label for="mixed-cash">Cash Amount</label>
                 <input type="number" id="mixed-cash" class="form-control" step="0.01" min="0" oninput="calcChange()">
             </div>
             <div class="form-group" style="margin:0">
-                <label>Card Amount</label>
+                <label for="mixed-card">Card Amount</label>
                 <input type="number" id="mixed-card" class="form-control" step="0.01" min="0" oninput="calcChange()">
             </div>
         </div>
         <div id="change-display" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:10px">
-            <button class="btn btn-success" style="flex:1;justify-content:center" onclick="completeSale()">
+        <div class="d-flex gap-10">
+            <button class="btn btn-success flex-1 justify-center" onclick="completeSale()">
                 <i class="fas fa-check"></i> Complete Sale
             </button>
             <button class="btn btn-outline" onclick="closePaymentModal()">
@@ -204,12 +203,12 @@ function updateCart() {
                     <div class="price">${formatMoney(item.price)}</div>
                 </div>
                 <div class="cart-item-qty">
-                    <button onclick="changeQty(${i}, -1)">-</button>
+                    <button onclick="changeQty(${i}, -1)" aria-label="Decrease quantity">-</button>
                     <span>${item.qty}</span>
-                    <button onclick="changeQty(${i}, 1)">+</button>
+                    <button onclick="changeQty(${i}, 1)" aria-label="Increase quantity">+</button>
                 </div>
                 <div class="cart-item-total">${formatMoney(lineTotal)}</div>
-                <button class="cart-item-remove" onclick="removeItem(${i})">&times;</button>
+                <button class="cart-item-remove" onclick="removeItem(${i})" aria-label="Remove item">&times;</button>
             </div>
         `;
     });
@@ -267,9 +266,9 @@ function showPaymentModal() {
     togglePayment();
 
     document.getElementById('payment-summary').innerHTML = `
-        <div style="display:flex;justify-content:space-between;font-size:16px">
+        <div class="flex-between fs-16">
             <strong>Total Due:</strong>
-            <strong style="font-size:22px">${formatMoney(window._cartTotal)}</strong>
+            <strong class="fs-22">${formatMoney(window._cartTotal)}</strong>
         </div>
     `;
 }
@@ -295,9 +294,9 @@ function calcChange() {
         const tendered = parseFloat(document.getElementById('cash-amount').value) || 0;
         change = tendered - total;
         if (tendered >= total && total > 0) {
-            html = `<div class="alert alert-success" style="margin:0;text-align:center;font-size:18px"><strong>Change: ${formatMoney(change)}</strong></div>`;
+            html = `<div class="alert alert-success m-0 text-center fs-18"><strong>Change: ${formatMoney(change)}</strong></div>`;
         } else if (tendered > 0) {
-            html = `<div class="alert alert-danger" style="margin:0;text-align:center">Insufficient amount</div>`;
+            html = `<div class="alert alert-danger m-0 text-center">Insufficient amount</div>`;
         }
     } else if (method === 'mixed') {
         const cash = parseFloat(document.getElementById('mixed-cash').value) || 0;
@@ -305,9 +304,9 @@ function calcChange() {
         const totalPaid = cash + card;
         change = cash - (total - card);
         if (totalPaid >= total && total > 0) {
-            html = `<div class="alert alert-success" style="margin:0;text-align:center;font-size:18px"><strong>Change: ${formatMoney(change)}</strong></div>`;
+            html = `<div class="alert alert-success m-0 text-center fs-18"><strong>Change: ${formatMoney(change)}</strong></div>`;
         } else if (totalPaid > 0) {
-            html = `<div class="alert alert-danger" style="margin:0;text-align:center">Remaining: ${formatMoney(total - totalPaid)}</div>`;
+            html = `<div class="alert alert-danger m-0 text-center">Remaining: ${formatMoney(total - totalPaid)}</div>`;
         }
     }
 
@@ -345,6 +344,7 @@ function completeSale() {
     formData.append('discount_pct', (window._cartDiscountPct || 0).toString());
     formData.append('tax', (window._cartTax || 0).toString());
     formData.append('total', total.toString());
+    formData.append('_csrf', '<?= csrf_token() ?>');
 
     fetch('index.php?page=sales&action=ajax', { method: 'POST', body: formData })
         .then(r => r.json())

@@ -83,7 +83,7 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
 ?>
 <div class="page-header">
     <h1><i class="fas fa-file-alt"></i> Reports</h1>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="d-flex gap-8 align-center">
         <a href="?page=reports&period=<?= e($period) ?>&tab=<?= e($tab) ?>&export=csv" class="btn btn-sm btn-secondary"><i class="fas fa-file-csv"></i> CSV</a>
         <a href="?page=reports&period=<?= e($period) ?>&tab=<?= e($tab) ?>&export=pdf" class="btn btn-sm btn-danger"><i class="fas fa-file-pdf"></i> PDF</a>
     </div>
@@ -123,7 +123,7 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
 <div class="card">
     <div class="card-header">
         <h2>Select Period</h2>
-        <div style="display:flex;gap:8px">
+        <div class="d-flex gap-8">
             <a href="?page=reports&period=today&tab=<?= e($tab) ?>" class="btn btn-sm <?= $period === 'today' ? 'btn-primary' : 'btn-outline' ?>">Today</a>
             <a href="?page=reports&period=week&tab=<?= e($tab) ?>" class="btn btn-sm <?= $period === 'week' ? 'btn-primary' : 'btn-outline' ?>">This Week</a>
             <a href="?page=reports&period=month&tab=<?= e($tab) ?>" class="btn btn-sm <?= $period === 'month' ? 'btn-primary' : 'btn-outline' ?>">This Month</a>
@@ -146,7 +146,7 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
                 <thead><tr><th>Date</th><th>Transactions</th><th>Total</th><th>Tax</th><th>Discount</th></tr></thead>
                 <tbody>
                     <?php if (empty($salesData)): ?>
-                        <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--gray-400)">No sales data for this period.</td></tr>
+                        <tr><td colspan="5" class="text-center p-40 text-muted">No sales data for this period.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($salesData as $row): ?>
                         <tr>
@@ -166,7 +166,7 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
                 <thead><tr><th>Product</th><th>Qty Sold</th><th>Total</th><th>Cost</th><th>Profit</th></tr></thead>
                 <tbody>
                     <?php if (empty($productData)): ?>
-                        <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--gray-400)">No product sales for this period.</td></tr>
+                        <tr><td colspan="5" class="text-center p-40 text-muted">No product sales for this period.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($productData as $row): ?>
                         <?php $profit = (float) ($row['total'] ?? 0) - (float) ($row['cost'] ?? 0); ?>
@@ -187,7 +187,7 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
                 <thead><tr><th>Cashier</th><th>Transactions</th><th>Total</th></tr></thead>
                 <tbody>
                     <?php if (empty($cashierData)): ?>
-                        <tr><td colspan="3" style="text-align:center;padding:30px;color:var(--gray-400)">No data for this period.</td></tr>
+                        <tr><td colspan="3" class="text-center p-40 text-muted">No data for this period.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($cashierData as $row): ?>
                         <tr>
@@ -205,7 +205,7 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
                 <thead><tr><th>Date</th><th>Revenue</th><th>Cost</th><th>Profit</th><th>Margin</th></tr></thead>
                 <tbody>
                     <?php if (empty($profitData)): ?>
-                        <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--gray-400)">No data for this period.</td></tr>
+                        <tr><td colspan="5" class="text-center p-40 text-muted">No data for this period.</td></tr>
                     <?php endif; ?>
                     <?php foreach ($profitData as $row): ?>
                         <?php

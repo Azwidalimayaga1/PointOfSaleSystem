@@ -9,6 +9,9 @@ $success = '';
 // Handle delete
 if (isset($_POST['delete_id'])) {
     requireRole('admin', 'manager');
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        redirect('index.php?page=products');
+    }
     $delProduct = getProduct($db, (int) $_POST['delete_id']);
     $stmt = $db->prepare("DELETE FROM products WHERE id = ? AND store_id = ?");
     $stmt->execute([(int) $_POST['delete_id'], activeStoreId()]);
@@ -24,6 +27,10 @@ if ($id > 0) {
 
 // Handle save
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_id'])) {
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        $errors[] = 'Invalid security token. Please refresh and try again.';
+    }
+
     $name = trim($_POST['name'] ?? '');
     $barcode = trim($_POST['barcode'] ?? '');
     $category = trim($_POST['category'] ?? '');
@@ -73,6 +80,7 @@ $p = $editProduct;
 
 <div class="card">
     <form method="post">
+        <?= csrf_field() ?>
         <input type="hidden" name="product_id" value="<?= (int) ($p['id'] ?? 0) ?>">
         <div class="form-row">
             <div class="form-group">

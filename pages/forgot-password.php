@@ -25,14 +25,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Invalid email format.';
         } else {
             $ip = getClientIp();
-            $stmt = $db->prepare("SELECT COUNT(*) FROM api_rate_limits WHERE identifier = ? AND endpoint_group = 'forgot_password' AND requested_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)");
-            $stmt->execute(['ip:' . $ip]);
-            if ((int) $stmt->fetchColumn() >= 3) {
+            $remaining = rate_limit_check_sliding($db, 'ip:' . $ip, 'forgot_password', 3, 900);
+            if ($remaining <= 0) {
                 $error = 'Too many password reset requests. Try again later.';
             } else {
                 rate_limit_hit($db, 'ip:' . $ip, 'forgot_password');
                 $token = generatePasswordResetToken($db, $email);
-                logActivity($db, 0, 'system', 'password_reset_request', "Password reset requested for $email from " . getClientIp());
+                logAction($db, 'password_reset_request', 'user', 0, "Password reset requested for $email from " . getClientIp());
                 $success = 'If that email is registered, a reset link has been sent. Please check your email inbox.';
             }
         }
@@ -47,6 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <title><?= e(STORE_NAME) ?> - Forgot Password</title>
     <script>if(localStorage.getItem('pos-theme')==='dark')document.documentElement.setAttribute('data-theme','dark')</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
 </head>

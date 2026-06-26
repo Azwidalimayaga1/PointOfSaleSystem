@@ -2,17 +2,23 @@
 
 declare(strict_types=1);
 
-// Mark as read
-if (isset($_GET['mark_read'])) {
-    $stmt = $db->prepare("UPDATE messages SET is_read = 1 WHERE id = ?");
-    $stmt->execute([(int) $_GET['mark_read']]);
-    redirect('index.php?page=admin-messages');
-}
+// Mark as read via POST only
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $csrf = $_POST['_csrf'] ?? '';
+    if (!validate_csrf($csrf)) {
+        redirect('index.php?page=admin-messages');
+    }
 
-// Mark all as read
-if (isset($_GET['mark_all_read'])) {
-    $db->exec("UPDATE messages SET is_read = 1");
-    redirect('index.php?page=admin-messages');
+    if (isset($_POST['mark_read'])) {
+        $stmt = $db->prepare("UPDATE messages SET is_read = 1 WHERE id = ?");
+        $stmt->execute([(int) $_POST['mark_read']]);
+        redirect('index.php?page=admin-messages');
+    }
+
+    if (isset($_POST['mark_all_read'])) {
+        $db->exec("UPDATE messages SET is_read = 1");
+        redirect('index.php?page=admin-messages');
+    }
 }
 
 $messages = getAllMessages($db);
@@ -21,9 +27,11 @@ $unread = getAllUnreadMessages($db);
 <div class="page-header">
     <h1><i class="fas fa-envelope"></i> Messages from Staff</h1>
     <?php if (!empty($unread)): ?>
-        <a href="?page=admin-messages&mark_all_read=1" class="btn btn-sm btn-primary">
-            <i class="fas fa-check-double"></i> Mark All Read
-        </a>
+        <form method="post" action="index.php?page=admin-messages" style="display:inline">
+            <?= csrf_field() ?>
+            <input type="hidden" name="mark_all_read" value="1">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="fas fa-check-double"></i> Mark All Read</button>
+        </form>
     <?php endif; ?>
 </div>
 
@@ -52,9 +60,11 @@ $unread = getAllUnreadMessages($db);
                     </div>
                 </div>
                 <?php if (!(int) $msg['is_read']): ?>
-                    <a href="?page=admin-messages&mark_read=<?= (int) $msg['id'] ?>" class="btn btn-sm btn-success" style="white-space:nowrap">
-                        <i class="fas fa-check"></i> Mark Read
-                    </a>
+                    <form method="post" action="index.php?page=admin-messages" style="display:inline">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="mark_read" value="<?= (int) $msg['id'] ?>">
+                        <button type="submit" class="btn btn-sm btn-success" style="white-space:nowrap"><i class="fas fa-check"></i> Mark Read</button>
+                    </form>
                 <?php endif; ?>
             </div>
         </div>

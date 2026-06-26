@@ -5,7 +5,19 @@ declare(strict_types=1);
 $errors = [];
 $success = '';
 
+// Load current settings for form display
+$settings = [];
+$stmt = $db->query("SELECT `key`, `value` FROM `settings`");
+while ($row = $stmt->fetch()) {
+    $settings[$row['key']] = $row['value'];
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $csrf = $_POST['_csrf'] ?? '';
+    if (!validate_csrf($csrf)) {
+        $errors[] = 'Invalid security token. Please refresh and try again.';
+    }
+
     $storeName = trim($_POST['store_name'] ?? '');
     $storeAddress = trim($_POST['store_address'] ?? '');
     $storeContact = trim($_POST['store_contact'] ?? '');
@@ -28,6 +40,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute(['receipt_footer', $receiptFooter]);
         $stmt->execute(['daily_target', (string) $dailyTarget]);
         logAction($db, 'settings_update', 'settings', null, 'Settings updated: store_name=' . $storeName . ', tax_rate=' . $taxRate . ', currency=' . $currency . ', daily_target=' . $dailyTarget);
+
+        // Reload settings so they reflect immediately in the rendered form
+        $stmt = $db->query("SELECT `key`, `value` FROM `settings`");
+        $settings = [];
+        while ($row = $stmt->fetch()) {
+            $settings[$row['key']] = $row['value'];
+        }
         $success = 'Settings saved successfully.';
     }
 }
@@ -43,37 +62,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="alert alert-danger"><?= e($err) ?></div>
 <?php endforeach; ?>
 
-<div class="card" style="max-width:700px">
+<div class="card max-w-lg">
     <form method="post">
+        <?= csrf_field() ?>
         <div class="form-group">
             <label for="store_name">Store Name</label>
-            <input type="text" id="store_name" name="store_name" class="form-control" required value="<?= e(STORE_NAME) ?>">
+            <input type="text" id="store_name" name="store_name" class="form-control" required value="<?= e($settings['store_name'] ?? STORE_NAME) ?>">
         </div>
         <div class="form-group">
             <label for="store_address">Store Address</label>
-            <textarea id="store_address" name="store_address" class="form-control" rows="3"><?= e(STORE_ADDRESS) ?></textarea>
+            <textarea id="store_address" name="store_address" class="form-control" rows="3"><?= e($settings['store_address'] ?? STORE_ADDRESS) ?></textarea>
         </div>
         <div class="form-group">
             <label for="store_contact">Contact Details</label>
-            <input type="text" id="store_contact" name="store_contact" class="form-control" value="<?= e(STORE_CONTACT) ?>">
+            <input type="text" id="store_contact" name="store_contact" class="form-control" value="<?= e($settings['store_contact'] ?? STORE_CONTACT) ?>">
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label for="tax_rate">VAT / Tax Rate (%)</label>
-                <input type="number" id="tax_rate" name="tax_rate" class="form-control" step="0.1" min="0" value="<?= e((string) TAX_RATE) ?>">
+                <input type="number" id="tax_rate" name="tax_rate" class="form-control" step="0.1" min="0" value="<?= e((string) ($settings['tax_rate'] ?? TAX_RATE)) ?>">
             </div>
             <div class="form-group">
                 <label for="currency">Currency Symbol</label>
-                <input type="text" id="currency" name="currency" class="form-control" maxlength="5" value="<?= e(CURRENCY) ?>">
+                <input type="text" id="currency" name="currency" class="form-control" maxlength="5" value="<?= e($settings['currency'] ?? CURRENCY) ?>">
             </div>
         </div>
         <div class="form-group">
             <label for="daily_target">Daily Sales Target</label>
-            <input type="number" id="daily_target" name="daily_target" class="form-control" step="0.01" min="1" value="<?= e((string) DAILY_TARGET) ?>">
+            <input type="number" id="daily_target" name="daily_target" class="form-control" step="0.01" min="1" value="<?= e((string) ($settings['daily_target'] ?? DAILY_TARGET)) ?>">
         </div>
         <div class="form-group">
             <label for="receipt_footer">Receipt Footer Message</label>
-            <textarea id="receipt_footer" name="receipt_footer" class="form-control" rows="2"><?= e(RECEIPT_FOOTER) ?></textarea>
+            <textarea id="receipt_footer" name="receipt_footer" class="form-control" rows="2"><?= e($settings['receipt_footer'] ?? RECEIPT_FOOTER) ?></textarea>
         </div>
         <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Save Settings</button>
     </form>
