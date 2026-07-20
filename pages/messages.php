@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-$userId = (int) ($_SESSION['user']['id'] ?? 0);
+$userId = (int) ($_SESSION['user_id'] ?? 0);
 $senderName = userName() ?? 'Unknown';
 $error = '';
 $success = '';
@@ -22,8 +22,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_message'])) {
         $user = $stmt->fetch();
 
         if ($user && password_verify($password, $user['password'])) {
-            $stmt = $db->prepare("INSERT INTO messages (sender_id, sender_name, message) VALUES (?, ?, ?)");
-            $stmt->execute([$userId, $senderName, $message]);
+            $stmt = $db->prepare("INSERT INTO messages (sender_id, sender_name, message, store_id) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$userId, $senderName, $message, activeStoreId()]);
             $success = 'Message sent to admin successfully.';
         } else {
             $error = 'Incorrect password. Message not sent.';
@@ -33,9 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['send_message'])) {
 
 $messages = getUserMessages($db, $userId);
 ?>
-<div class="page-header">
-    <h1><i class="fas fa-envelope"></i> My Messages</h1>
-</div>
+
 
 <?php if ($error): ?>
     <div class="alert alert-danger"><?= e($error) ?></div>

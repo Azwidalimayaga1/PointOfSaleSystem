@@ -1,6 +1,13 @@
 <?php declare(strict_types=1);
 
+if (!defined('DB_HOST')) {
+    require __DIR__ . '/../config.php';
+    require __DIR__ . '/../functions.php';
+}
+
 header('Content-Type: application/json');
+
+requireAjaxLogin();
 
 $barcode = trim($_POST['barcode'] ?? '');
 

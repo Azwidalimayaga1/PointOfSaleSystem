@@ -10,7 +10,6 @@ $products = getProducts($db, $search, $category, $stockFilter);
 $categories = getCategories($db);
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-box"></i> Products</h1>
     <a href="index.php?page=product-form" class="btn btn-primary">
         <i class="fas fa-plus"></i> Add Product
     </a>
@@ -48,19 +47,29 @@ $categories = getCategories($db);
                     <th>Price</th>
                     <th>Cost</th>
                     <th>Stock</th>
+                    <?php if (isSuperAdmin()): ?><th>Store</th><?php endif; ?>
                     <th>Status</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php if (empty($products)): ?>
-                    <tr><td colspan="9" class="text-center p-40 text-muted">No products found.</td></tr>
+                    <tr><td colspan="<?= isSuperAdmin() ? 10 : 9 ?>" class="text-center p-40 text-muted">No products found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($products as $p): ?>
                     <tr>
                         <td><?php if ($p['image']): ?><img src="<?= e($p['image']) ?>" alt="" class="product-thumb"><?php endif; ?></td>
                         <td><strong><?= e($p['name']) ?></strong></td>
-                        <td><?= e($p['barcode'] ?? '-') ?></td>
+                        <td>
+                            <?php if ($p['barcode']): ?>
+                                <span class="barcode-display"><?= e($p['barcode']) ?></span>
+                                <?php if ($p['barcode_type']): ?>
+                                <br><span class="fs-10 text-muted"><?= e($p['barcode_type']) ?></span>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <span class="badge badge-gray">No barcode</span>
+                            <?php endif; ?>
+                        </td>
                         <td><span class="badge badge-gray"><?= e($p['category'] ?? '-') ?></span></td>
                         <td><?= money((float) $p['price']) ?></td>
                         <td><?= money((float) $p['cost_price']) ?></td>
@@ -73,15 +82,24 @@ $categories = getCategories($db);
                                 <span class="badge badge-success"><?= (int) $p['stock_quantity'] ?></span>
                             <?php endif; ?>
                         </td>
+                        <?php if (isSuperAdmin()): ?>
+                        <td><span class="badge badge-primary"><?= e($p['store_name'] ?? 'Store #' . $p['store_id']) ?></span></td>
+                        <?php endif; ?>
                         <td>
                             <span class="badge <?= $p['status'] === 'active' ? 'badge-success' : 'badge-gray' ?>">
                                 <?= e(ucfirst($p['status'] ?? 'active')) ?>
                             </span>
                         </td>
                         <td>
+                            <div class="d-flex gap-4" style="flex-wrap:nowrap">
                             <a href="index.php?page=product-form&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-primary" title="Edit product">
                                 <i class="fas fa-edit"></i>
                             </a>
+                            <?php if ($p['barcode']): ?>
+                            <a href="index.php?page=barcode-print&product_id=<?= (int) $p['id'] ?>&count=1" target="_blank" class="btn btn-sm btn-outline" title="Print barcode label">
+                                <i class="fas fa-barcode"></i>
+                            </a>
+                            <?php endif; ?>
                             <a href="index.php?page=stock-adjustment&id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-warning" title="Adjust stock">
                                 <i class="fas fa-cubes"></i>
                             </a>
@@ -90,6 +108,7 @@ $categories = getCategories($db);
                                 <input type="hidden" name="_csrf" value="<?= csrf_token() ?>">
                                 <button type="submit" class="btn btn-sm btn-danger" title="Delete product"><i class="fas fa-trash"></i></button>
                             </form>
+                            </div>
                         </td>
                     </tr>
                 <?php endforeach; ?>

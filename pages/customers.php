@@ -7,7 +7,7 @@ $sql .= " ORDER BY name ASC";
 $stmt = $db->prepare($sql); $stmt->execute($params);
 $customers = $stmt->fetchAll();
 ?>
-<div class="page-header"><h1><i class="fas fa-user-friends"></i> Customers</h1><a href="index.php?page=customer-form" class="btn btn-primary"><i class="fas fa-plus"></i> Add Customer</a></div>
+<div class="page-header"><a href="index.php?page=customer-form" class="btn btn-primary"><i class="fas fa-plus"></i> Add Customer</a></div>
 <div class="card">
 <div class="search-bar mb-16">
 <form method="get" class="d-flex gap-10 w-full">

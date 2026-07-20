@@ -6,6 +6,10 @@ require_once __DIR__ . '/../functions.php';
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
+$privacyStoreName = trim((string) ($storeSettings['store_display_name'] ?? STORE_NAME));
+$privacyEmail = trim((string) ($storeSettings['email_address'] ?? ''));
+$privacyPhone = trim((string) ($storeSettings['contact_number'] ?? STORE_CONTACT));
+$privacyAddress = trim((string) ($storeSettings['physical_address'] ?? STORE_ADDRESS));
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -94,7 +98,7 @@ header('Expires: 0');
             <div class="privacy-header">
                 <div>
                     <h1>Privacy Policy</h1>
-                    <p class="meta"><strong>Effective Date:</strong> 26 May 2026 &mdash; <strong>Business Name:</strong> WAPANDA &mdash; <strong>POS System:</strong> WAPANDA POS</p>
+                    <p class="meta"><strong>Effective Date:</strong> 18 July 2026 &mdash; <strong>Business Name:</strong> <?= e($privacyStoreName) ?></p>
                 </div>
                 <button class="btn-theme" onclick="toggleTheme()" title="Toggle theme" id="theme-toggle">
                     <i class="fas fa-moon"></i>
@@ -112,13 +116,14 @@ header('Expires: 0');
                 <li>Phone number</li>
                 <li>Email address</li>
                 <li>Purchase history</li>
-                <li>Payment details</li>
+                <li>Transaction and payment reference information (not full card numbers)</li>
                 <li>Refund and return records</li>
                 <li>Loyalty or discount information</li>
                 <li>Staff login details</li>
                 <li>Sales and transaction records</li>
                 <li>Device and system activity logs</li>
             </ul>
+            <p>At self-checkout, a customer photo is collected only when the customer actively consents to it for transaction fraud prevention. It is not required to complete a purchase.</p>
             <p>We do not knowingly collect unnecessary personal information.</p>
 
             <h2>3. How We Use Information</h2>
@@ -135,7 +140,7 @@ header('Expires: 0');
             </ul>
 
             <h2>4. Payment Information</h2>
-            <p>Payment information is used only to complete transactions. We do not store full bank card numbers unless this is handled securely by an authorised payment provider.</p>
+            <p>Payment information is used only to complete transactions. This POS records only the last four digits provided for a card transaction and does not store a full card number.</p>
 
             <h2>5. Sharing of Information</h2>
             <p>We may share limited information with:</p>
@@ -161,6 +166,7 @@ header('Expires: 0');
 
             <h2>7. Data Retention</h2>
             <p>We keep personal information only for as long as needed for business, legal, tax, and record-keeping purposes. When information is no longer needed, it will be deleted, anonymised, or securely archived.</p>
+            <p>Consented self-checkout photos are retained for 30 days and then automatically deleted. Photos are not used for marketing or biometric identification.</p>
 
             <h2>8. Customer Rights</h2>
             <p>Customers may request to:</p>
@@ -171,9 +177,7 @@ header('Expires: 0');
                 <li>Request deletion where legally allowed</li>
                 <li>Object to certain processing</li>
             </ul>
-            <p>Requests can be sent to:</p>
-            <p>Email: <a href="mailto:azwidalimanyaga244@gmail.com">azwidalimanyaga244@gmail.com</a><br>
-            Phone: 071 674 0883</p>
+            <p>Use the contact details below to make a request. We may need to verify your identity before actioning it.</p>
 
             <h2>9. Cookies and Online Use</h2>
             <p>If the POS system has an online dashboard, website, or customer portal, cookies or similar tools may be used to improve login, security, and system performance.</p>
@@ -187,17 +191,17 @@ header('Expires: 0');
             <h2>12. Contact Us</h2>
             <p>For questions about this Privacy Policy, contact:</p>
             <p>
-                <strong>Business Name:</strong> WAPANDA<br>
-                <strong>Email:</strong> <a href="mailto:azwidalimanyaga244@gmail.com">azwidalimanyaga244@gmail.com</a><br>
-                <strong>Phone:</strong> 071 674 0883<br>
-                <strong>Address:</strong> 39 Grant Drive, HillsHaven, Westonaria
+                <strong>Business Name:</strong> <?= e($privacyStoreName) ?><br>
+                <?php if ($privacyEmail !== ''): ?><strong>Email:</strong> <a href="mailto:<?= e($privacyEmail) ?>"><?= e($privacyEmail) ?></a><br><?php endif; ?>
+                <?php if ($privacyPhone !== ''): ?><strong>Phone:</strong> <?= e($privacyPhone) ?><br><?php endif; ?>
+                <?php if ($privacyAddress !== ''): ?><strong>Address:</strong> <?= nl2br(e($privacyAddress)) ?><?php endif; ?>
             </p>
 
             <a href="javascript:history.back()" class="back-link"><i class="fas fa-arrow-left"></i> Back</a>
         </div>
     </main>
     <div class="privacy-footer">
-        &copy; <?= date('Y') ?> <?= e(STORE_NAME) ?> &mdash; WAPANDA POS
+        &copy; <?= date('Y') ?> <?= e($privacyStoreName) ?>
     </div>
 <script>
 function toggleTheme() {

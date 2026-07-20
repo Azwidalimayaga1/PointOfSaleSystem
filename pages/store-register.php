@@ -11,6 +11,9 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        $error = 'Your session expired. Please refresh and try again.';
+    } else {
     $storeName = trim($_POST['store_name'] ?? '');
     $address = trim($_POST['address'] ?? '');
     $contact = trim($_POST['contact'] ?? '');
@@ -22,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$storeName || !$username || !$fullName || !$password) {
         $error = 'Store name, username, full name, and password are required.';
-    } elseif (strlen($password) < 8) {
-        $error = 'Password must be at least 8 characters.';
+    } elseif (strlen($password) < 12) {
+        $error = 'Password must be at least 12 characters.';
     } elseif ($password !== $confirm) {
         $error = 'Passwords do not match.';
     } else {
@@ -56,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -86,6 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php else: ?>
         <form method="post">
+            <?= csrf_field() ?>
             <h3 class="section-title"><i class="fas fa-building"></i> Store Details</h3>
             <div class="form-row">
                 <div class="form-group">
@@ -122,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-row">
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" name="password" id="password" class="form-control" required minlength="8">
+                    <input type="password" name="password" id="password" class="form-control" required minlength="12">
                 </div>
                 <div class="form-group">
                     <label for="confirm_password">Confirm Password</label>

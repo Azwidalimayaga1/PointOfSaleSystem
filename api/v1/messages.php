@@ -3,11 +3,13 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
+$apiStoreId = requireApiStore($db, $user);
 
 switch ($method) {
     case 'GET':
+        $isAdmin = in_array($user['role'], ['super_admin', 'store_admin'], true);
         if ($id === 'unread') {
-            if ($user['role'] === 'admin') {
+            if ($isAdmin) {
                 $messages = getAllUnreadMessages($db);
             } else {
                 $count = getUnreadMessageCount($db, (int) $user['id']);
@@ -17,7 +19,7 @@ switch ($method) {
             jsonResponse(['messages' => $messages]);
         }
 
-        if ($user['role'] === 'admin') {
+        if ($isAdmin) {
             $messages = getAllMessages($db);
         } else {
             $messages = getUserMessages($db, (int) $user['id']);
@@ -39,7 +41,7 @@ switch ($method) {
 
     case 'PUT':
         if ($id && $subResource === 'read') {
-            if ($user['role'] === 'admin') {
+        if ($isAdmin) {
                 $stmt = $db->prepare("UPDATE messages SET is_read = 1 WHERE id = ? AND store_id = ?");
                 $stmt->execute([(int) $id, ACTIVE_STORE_ID]);
             } else {

@@ -3,10 +3,11 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
+$apiStoreId = requireApiStore($db, $user);
 
 switch ($method) {
     case 'GET':
-        if ($id === 'pending' && $user['role'] === 'admin') {
+        if ($id === 'pending' && in_array($user['role'], ['super_admin', 'store_admin'], true)) {
             $stmt = $db->prepare("SELECT rr.*, u.username FROM return_requests rr JOIN users u ON u.id = rr.cashier_id WHERE rr.status = 'pending' AND rr.store_id = ? ORDER BY rr.created_at DESC");
             $stmt->execute([ACTIVE_STORE_ID]);
             jsonResponse(['return_requests' => $stmt->fetchAll()]);
@@ -41,7 +42,7 @@ switch ($method) {
             $params[] = $status;
         }
 
-        if ($user['role'] !== 'admin') {
+        if (!in_array($user['role'], ['super_admin', 'store_admin'], true)) {
             $sql .= " AND cashier_id = ?";
             $params[] = (int) $user['id'];
         }
@@ -104,7 +105,7 @@ switch ($method) {
         jsonResponse(['success' => true, 'return_id' => (int) $db->lastInsertId()], 201);
 
     case 'PUT':
-        requireRole($user, 'admin');
+        requireRole($user, 'super_admin', 'store_admin');
 
         if (!$id || $subResource !== 'status') {
             jsonResponse(['error' => 'Not found'], 404);

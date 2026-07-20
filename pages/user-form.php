@@ -5,14 +5,18 @@ declare(strict_types=1);
 $editUser = null;
 $errors = [];
 $success = '';
-$currentUserRole = $_SESSION['user']['role'] ?? '';
-$isSystemAdmin = $currentUserRole === 'admin';
+$isSystemAdmin = isSuperAdmin();
+$isStoreAdmin = isStoreAdmin();
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($id > 0) {
-    $storeClause = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
-    $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND $storeClause");
-    $stmt->execute([$id, activeStoreId()]);
+    if (isSuperAdmin()) {
+        $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$id]);
+    } else {
+        $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND store_id = ?");
+        $stmt->execute([$id, currentUserStoreId()]);
+    }
     $editUser = $stmt->fetch();
     if (!$editUser) redirect('index.php?page=users');
 }
@@ -20,9 +24,11 @@ if ($id > 0) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $fullName = trim($_POST['full_name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $role = $_POST['role'] ?? 'cashier';
     $status = $_POST['status'] ?? 'active';
     $password = $_POST['password'] ?? '';
+    $storeId = isset($_POST['store_id']) ? (int) $_POST['store_id'] : 0;
     $userId = (int) ($_POST['user_id'] ?? 0);
 
     $csrf = $_POST['_csrf'] ?? '';
@@ -40,33 +46,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->execute([$username, $userId]);
     if ($stmt->fetchColumn() > 0) $errors[] = 'Username already taken.';
 
-    // Prevent store_admin from assigning system admin role
-    if (!$isSystemAdmin && $role === 'admin') {
-        $errors[] = 'You do not have permission to assign the System Admin role.';
+    // Permission checks
+    if ($role === 'super_admin' && !$isSystemAdmin) {
+        $errors[] = 'You do not have permission to assign the Super Admin role.';
     }
 
-    // Prevent store_admin from creating other store_admin users (privilege escalation)
-    if ($currentUserRole === 'store_admin' && in_array($role, ['store_admin', 'admin'], true)) {
-        $errors[] = 'You do not have permission to create or assign the Store Admin role.';
+    // Store admins cannot create other store_admins
+    if ($isStoreAdmin && in_array($role, ['store_admin', 'super_admin', 'manager'], true)) {
+        $errors[] = 'You do not have permission to assign this role.';
+    }
+
+    // Store admins can only create cashier users
+    if ($isStoreAdmin && $role !== 'cashier') {
+        $errors[] = 'As a Store Admin, you can only create Cashier users.';
+    }
+
+    // Check super_admin limit (max 3)
+    if ($role === 'super_admin') {
+        $limitError = checkSuperAdminLimit($db);
+        // If updating existing super_admin, don't count them
+        if ($editUser && $editUser['role'] === 'super_admin') {
+            $limitError = null;
+        }
+        if ($limitError) {
+            $errors[] = $limitError;
+        }
+    }
+
+    // Non-super_admin users must have a store assigned
+    if ($role !== 'super_admin' && $storeId <= 0) {
+        $errors[] = 'A store must be selected for ' . ucfirst($role) . ' users.';
+    }
+
+    // Super admin must have store_id as NULL
+    if ($role === 'super_admin') {
+        $storeId = 0; // Will be set to NULL
+    }
+
+    // Store admins can only assign users to their own store
+    if ($isStoreAdmin) {
+        $storeId = currentUserStoreId();
     }
 
     if (empty($errors)) {
+        $actualStoreId = $role === 'super_admin' ? null : ($storeId > 0 ? $storeId : null);
+
         if ($userId > 0) {
-            $storeClause = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
             if ($password) {
                 $hash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, role=?, status=?, password=? WHERE id=? AND $storeClause");
-                $stmt->execute([$username, $fullName, $role, $status, $hash, $userId, activeStoreId()]);
+                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, email=?, role=?, store_id=?, status=?, password=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+                $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $hash, $userId]);
             } else {
-                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, role=?, status=? WHERE id=? AND $storeClause");
-                $stmt->execute([$username, $fullName, $role, $status, $userId, activeStoreId()]);
+                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, email=?, role=?, store_id=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+                $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $userId]);
             }
             logAction($db, 'user_update', 'user', $userId, 'Updated user: ' . $username . ' (role: ' . $role . ', status: ' . $status . ')');
             $success = 'User updated successfully.';
         } else {
             $hash = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $db->prepare("INSERT INTO users (username, full_name, role, status, password, store_id) VALUES (?,?,?,?,?,?)");
-            $stmt->execute([$username, $fullName, $role, $status, $hash, activeStoreId()]);
+            $stmt = $db->prepare("INSERT INTO users (username, full_name, email, role, store_id, status, password) VALUES (?,?,?,?,?,?,?)");
+            $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $hash]);
             $newUserId = (int) $db->lastInsertId();
             logAction($db, 'user_create', 'user', $newUserId, 'Created user: ' . $username . ' (role: ' . $role . ')');
             $success = 'User added successfully.';
@@ -79,9 +118,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $u = $editUser;
+
+// Get stores for dropdown
+$allStores = [];
+if ($isSystemAdmin) {
+    $allStores = $db->query("SELECT id, name FROM stores ORDER BY name ASC")->fetchAll();
+}
+
+// Super admin warning
+$superAdminWarning = null;
+if ($isSystemAdmin) {
+    $superAdminWarning = checkSuperAdminLimit($db);
+}
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-<?= $u ? 'edit' : 'plus' ?>"></i> <?= $u ? 'Edit User' : 'Add User' ?></h1>
     <a href="index.php?page=users" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a>
 </div>
 
@@ -91,6 +141,13 @@ $u = $editUser;
 <?php foreach ($errors as $err): ?>
     <div class="alert alert-danger"><?= e($err) ?></div>
 <?php endforeach; ?>
+
+<?php if ($superAdminWarning && !$u): ?>
+<div class="alert alert-warning">
+    <i class="fas fa-exclamation-triangle"></i>
+    <?= e($superAdminWarning) ?>
+</div>
+<?php endif; ?>
 
 <div class="card" style="max-width:600px">
     <form method="post">
@@ -104,16 +161,20 @@ $u = $editUser;
             <label for="full_name">Full Name</label>
             <input type="text" id="full_name" name="full_name" class="form-control" required value="<?= e($u['full_name'] ?? '') ?>">
         </div>
+        <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" class="form-control" value="<?= e($u['email'] ?? '') ?>">
+        </div>
         <div class="form-row">
             <div class="form-group">
                 <label for="role">Role</label>
-                <select id="role" name="role" class="form-control">
-                    <option value="cashier" <?= ($u['role'] ?? '') === 'cashier' ? 'selected' : '' ?>>Cashier</option>
-                    <option value="manager" <?= ($u['role'] ?? '') === 'manager' ? 'selected' : '' ?>>Manager</option>
-                    <option value="store_admin" <?= ($u['role'] ?? '') === 'store_admin' ? 'selected' : '' ?>>Store Admin</option>
+                <select id="role" name="role" class="form-control" onchange="toggleRoleFields()">
                     <?php if ($isSystemAdmin): ?>
-                    <option value="admin" <?= ($u['role'] ?? '') === 'admin' ? 'selected' : '' ?>>System Admin</option>
+                    <option value="super_admin" <?= ($u['role'] ?? '') === 'super_admin' ? 'selected' : '' ?>>Super Admin</option>
                     <?php endif; ?>
+                    <option value="store_admin" <?= ($u['role'] ?? '') === 'store_admin' ? 'selected' : '' ?>>Store Admin</option>
+                    <option value="manager" <?= ($u['role'] ?? '') === 'manager' ? 'selected' : '' ?>>Manager</option>
+                    <option value="cashier" <?= ($u['role'] ?? '') === 'cashier' ? 'selected' : '' ?>>Cashier</option>
                 </select>
             </div>
             <div class="form-group">
@@ -121,8 +182,24 @@ $u = $editUser;
                 <select id="status" name="status" class="form-control">
                     <option value="active" <?= ($u['status'] ?? 'active') === 'active' ? 'selected' : '' ?>>Active</option>
                     <option value="inactive" <?= ($u['status'] ?? '') === 'inactive' ? 'selected' : '' ?>>Inactive</option>
+                    <option value="pending" <?= ($u['status'] ?? '') === 'pending' ? 'selected' : '' ?>>Pending</option>
                 </select>
             </div>
+        </div>
+        <div class="form-group" id="store-group" <?= $isSystemAdmin ? '' : 'style="display:none"' ?>>
+            <label for="store_id">Assigned Store</label>
+            <?php if ($isSystemAdmin): ?>
+            <select id="store_id" name="store_id" class="form-control">
+                <option value="">-- Select Store --</option>
+                <?php foreach ($allStores as $s): ?>
+                    <option value="<?= (int) $s['id'] ?>" <?= ($u['store_id'] ?? 0) == $s['id'] ? 'selected' : '' ?>><?= e($s['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <?php else: ?>
+            <?php $storeName = $db->prepare("SELECT name FROM stores WHERE id = ?"); $storeName->execute([currentUserStoreId()]); ?>
+            <input type="text" class="form-control" value="<?= e($storeName->fetchColumn() ?: 'Store #' . currentUserStoreId()) ?>" readonly>
+            <input type="hidden" name="store_id" value="<?= (int) currentUserStoreId() ?>">
+            <?php endif; ?>
         </div>
         <div class="form-group">
             <label for="password"><?= $u ? 'New Password (leave blank to keep current)' : 'Password' ?></label>
@@ -131,3 +208,14 @@ $u = $editUser;
         <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> <?= $u ? 'Update User' : 'Add User' ?></button>
     </form>
 </div>
+
+<script>
+function toggleRoleFields() {
+    var role = document.getElementById('role').value;
+    var storeGroup = document.getElementById('store-group');
+    if (storeGroup) {
+        storeGroup.style.display = role === 'super_admin' ? 'none' : 'block';
+    }
+}
+document.addEventListener('DOMContentLoaded', toggleRoleFields);
+</script>

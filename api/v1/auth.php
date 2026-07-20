@@ -78,7 +78,7 @@ switch ($method) {
             $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
 
             $stmt = $db->prepare("INSERT INTO sessions (user_id, access_token, refresh_token, expires_at, ip_address, user_agent, store_id) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR), ?, ?, ?)");
-            $stmt->execute([$user['id'], $accessToken, $refreshToken, $ip, $ua, ACTIVE_STORE_ID]);
+            $stmt->execute([$user['id'], $accessToken, $refreshToken, $ip, $ua, $user['store_id'] ? (int) $user['store_id'] : null]);
 
             $stmt = $db->prepare("INSERT INTO login_attempts (ip_address, email, attempted_at, success) VALUES (?, ?, NOW(), 1)");
             $stmt->execute([$_SERVER['REMOTE_ADDR'] ?? 'unknown', $email]);

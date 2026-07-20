@@ -5,14 +5,14 @@ declare(strict_types=1);
 $editStore = null;
 $errors = [];
 $success = '';
-$userRole = $_SESSION['user']['role'] ?? '';
-$isSystemAdmin = $userRole === 'admin';
+$isSystemAdmin = isSuperAdmin();
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if ($id > 0) {
     // Store admin can only edit their own store
-    if (!$isSystemAdmin && $id !== activeStoreId()) {
-        redirect('index.php?page=dashboard');
+    if (isStoreAdmin() && $id !== currentUserStoreId()) {
+        logAction($db, 'access_denied_store_edit', 'store', $id, 'Store admin attempted to edit another store');
+        accessDenied();
     }
     $editStore = getStore($db, $id);
     if (!$editStore) redirect('index.php?page=stores');
@@ -40,13 +40,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         if ($id > 0) {
-            $stmt = $db->prepare("UPDATE stores SET name=?, address=?, contact=?, email=?, currency=?, tax_rate=?, receipt_footer=?, daily_target=?, self_checkout_enabled=?, status=? WHERE id=?");
-            $stmt->execute([$name, $address, $contact, $email, $currency, $taxRate, $receiptFooter, $dailyTarget, $selfCheckout, $status, $id]);
+            // Store admins can only update their own store
+            if (isStoreAdmin()) {
+                $storeId = currentUserStoreId();
+                $stmt = $db->prepare("UPDATE stores SET name=?, address=?, contact=?, email=?, currency=?, tax_rate=?, receipt_footer=?, daily_target=?, self_checkout_enabled=? WHERE id=?");
+                $stmt->execute([$name, $address, $contact, $email, $currency, $taxRate, $receiptFooter, $dailyTarget, $selfCheckout, $storeId]);
+            } else {
+                $stmt = $db->prepare("UPDATE stores SET name=?, address=?, contact=?, email=?, currency=?, tax_rate=?, receipt_footer=?, daily_target=?, self_checkout_enabled=?, status=? WHERE id=?");
+                $stmt->execute([$name, $address, $contact, $email, $currency, $taxRate, $receiptFooter, $dailyTarget, $selfCheckout, $status, $id]);
+            }
             $success = 'Store updated successfully.';
             if ((int) $id === ACTIVE_STORE_ID) {
                 $_SESSION['store_id'] = $id;
             }
         } else {
+            // Only super_admin can create new stores
+            requireSuperAdmin();
             $stmt = $db->prepare("INSERT INTO stores (name, address, contact, email, currency, tax_rate, receipt_footer, daily_target, self_checkout_enabled, status) VALUES (?,?,?,?,?,?,?,?,?,?)");
             $stmt->execute([$name, $address, $contact, $email, $currency, $taxRate, $receiptFooter, $dailyTarget, $selfCheckout, $status]);
             $id = (int) $db->lastInsertId();
@@ -59,7 +68,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $s = $editStore;
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-<?= $s ? 'edit' : 'plus' ?>"></i> <?= $s ? 'Edit Store' : 'Add Store' ?></h1>
     <a href="index.php?page=<?= $isSystemAdmin ? 'stores' : 'dashboard' ?>" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a>
 </div>
 
@@ -114,7 +122,7 @@ $s = $editStore;
             </label>
             <span style="font-size:13px;color:var(--gray-400)">Allows customers to scan and pay for items themselves</span>
         </div>
-        <?php if ($s): ?>
+        <?php if ($s && $isSystemAdmin): ?>
         <div class="form-group">
             <label for="status">Status</label>
             <select id="status" name="status" class="form-control">

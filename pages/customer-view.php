@@ -9,7 +9,7 @@ $salesStmt = $db->prepare("SELECT * FROM sales WHERE customer_id = ? AND store_i
 $salesStmt->execute([$id, activeStoreId()]);
 $sales = $salesStmt->fetchAll();
 ?>
-<div class="page-header"><h1><i class="fas fa-user"></i> <?= e($c['name']) ?></h1><a href="index.php?page=customers" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a></div>
+<div class="page-header"><a href="index.php?page=customers" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a></div>
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">
 <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--primary)"><?= (int) $c['visit_count'] ?></div><div style="font-size:13px;color:var(--text-secondary)">Visits</div></div>
 <div class="card" style="text-align:center"><div style="font-size:24px;font-weight:700;color:var(--success)"><?= money((float) $c['total_spent']) ?></div><div style="font-size:13px;color:var(--text-secondary)">Total Spent</div></div>

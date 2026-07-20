@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-$userRole = $_SESSION['user']['role'] ?? '';
-$isSystemAdmin = $userRole === 'admin';
-$storeIdFilter = $isSystemAdmin ? '(store_id = ? OR store_id IS NULL)' : 'store_id = ?';
+$userRole = userRole();
+$isSystemAdmin = isSuperAdmin();
 
 // Handle approve/reject/delete via POST only
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -15,28 +14,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (isset($_POST['approve'])) {
-        $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND $storeIdFilter");
-        $stmt->execute([(int) $_POST['approve'], activeStoreId()]);
+        if (isSuperAdmin()) {
+            $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ?");
+            $stmt->execute([(int) $_POST['approve']]);
+        } else {
+            $stmt = $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND store_id = ?");
+            $stmt->execute([(int) $_POST['approve'], currentUserStoreId()]);
+        }
         logAction($db, 'user_approve', 'user', (int) $_POST['approve'], 'Approved user ID: ' . (int) $_POST['approve']);
         redirect('index.php?page=users');
     }
     if (isset($_POST['reject'])) {
-        $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ? AND $storeIdFilter");
-        $stmt->execute([(int) $_POST['reject'], activeStoreId()]);
+        if (isSuperAdmin()) {
+            $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
+            $stmt->execute([(int) $_POST['reject']]);
+        } else {
+            $stmt = $db->prepare("UPDATE users SET status = 'inactive' WHERE id = ? AND store_id = ?");
+            $stmt->execute([(int) $_POST['reject'], currentUserStoreId()]);
+        }
         logAction($db, 'user_reject', 'user', (int) $_POST['reject'], 'Rejected user ID: ' . (int) $_POST['reject']);
         redirect('index.php?page=users');
     }
     if (isset($_POST['delete'])) {
         $userId = (int) $_POST['delete'];
-        $targetUser = $db->prepare("SELECT * FROM users WHERE id = ? AND $storeIdFilter");
-        $targetUser->execute([$userId, activeStoreId()]);
-        $targetUser = $targetUser->fetch();
+        if (isSuperAdmin()) {
+            $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
+            $stmt->execute([$userId]);
+        } else {
+            $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND store_id = ?");
+            $stmt->execute([$userId, currentUserStoreId()]);
+        }
+        $targetUser = $stmt->fetch();
         if ($targetUser) {
-            if ((int) $targetUser['id'] === (int) ($_SESSION['user']['id'] ?? 0)) {
+            if ((int) $targetUser['id'] === CURRENT_USER_ID) {
                 $_SESSION['pos_flash'] = ['type' => 'danger', 'message' => 'Cannot delete your own account.'];
             } else {
-                $stmt = $db->prepare("DELETE FROM users WHERE id = ? AND $storeIdFilter");
-                $stmt->execute([$userId, activeStoreId()]);
+                if (isSuperAdmin()) {
+                    $del = $db->prepare("DELETE FROM users WHERE id = ?");
+                    $del->execute([$userId]);
+                } else {
+                    $del = $db->prepare("DELETE FROM users WHERE id = ? AND store_id = ?");
+                    $del->execute([$userId, currentUserStoreId()]);
+                }
                 logAction($db, 'user_delete', 'user', $userId, 'Deleted user: ' . $targetUser['username'] . ' (' . $targetUser['role'] . ')');
                 $_SESSION['pos_flash'] = ['type' => 'success', 'message' => 'User "' . $targetUser['username'] . '" deleted.'];
             }
@@ -45,15 +64,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$users = $db->prepare("SELECT id, username, full_name, role, status, created_at FROM users WHERE $storeIdFilter ORDER BY status = 'pending' DESC, role, full_name");
-$users->execute([activeStoreId()]);
-$users = $users->fetchAll();
-$pendingCount = $db->prepare("SELECT COUNT(*) FROM users WHERE status = 'pending' AND $storeIdFilter");
-$pendingCount->execute([activeStoreId()]);
-$pendingCount = $pendingCount->fetchColumn();
+// Build query based on role
+if (isSuperAdmin()) {
+    $users = $db->query("SELECT id, username, full_name, email, role, store_id, status, created_at FROM users ORDER BY status = 'pending' DESC, role, full_name")->fetchAll();
+    $pendingCount = (int) $db->query("SELECT COUNT(*) FROM users WHERE status = 'pending'")->fetchColumn();
+} else {
+    $stmt = $db->prepare("SELECT id, username, full_name, email, role, store_id, status, created_at FROM users WHERE store_id = ? ORDER BY status = 'pending' DESC, role, full_name");
+    $stmt->execute([currentUserStoreId()]);
+    $users = $stmt->fetchAll();
+    $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE status = 'pending' AND store_id = ?");
+    $stmt->execute([currentUserStoreId()]);
+    $pendingCount = (int) $stmt->fetchColumn();
+}
+
+// Get stores list for display
+$stores = [];
+if (isSuperAdmin()) {
+    $stores = $db->query("SELECT id, name FROM stores ORDER BY name")->fetchAll();
+    $storeMap = [];
+    foreach ($stores as $s) {
+        $storeMap[$s['id']] = $s['name'];
+    }
+}
+
+// Super admin count warning
+$superAdminCount = countSuperAdmins($db);
+$superAdminLimitReached = $superAdminCount >= 3;
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-users"></i> User Management</h1>
     <div class="d-flex gap-8 align-center">
         <?php if ($pendingCount > 0): ?>
             <span class="badge badge-danger fs-14" style="padding:6px 14px">
@@ -64,6 +102,13 @@ $pendingCount = $pendingCount->fetchColumn();
     </div>
 </div>
 
+<?php if ($superAdminLimitReached && isSuperAdmin()): ?>
+<div class="alert alert-warning">
+    <i class="fas fa-info-circle"></i>
+    The system currently has <strong><?= $superAdminCount ?></strong> active Super Admins (maximum of 3). You cannot create additional Super Admin accounts unless you deactivate an existing one.
+</div>
+<?php endif; ?>
+
 <div class="card">
     <div class="table-container">
         <table>
@@ -72,6 +117,7 @@ $pendingCount = $pendingCount->fetchColumn();
                     <th>Username</th>
                     <th>Full Name</th>
                     <th>Role</th>
+                    <th>Store</th>
                     <th>Status</th>
                     <th>Created</th>
                     <th>Actions</th>
@@ -79,13 +125,30 @@ $pendingCount = $pendingCount->fetchColumn();
             </thead>
             <tbody>
                 <?php foreach ($users as $u): ?>
+                    <?php $userStoreId = $u['store_id'] ? (int) $u['store_id'] : null; ?>
                     <tr class="<?= $u['status'] === 'pending' ? 'bg-warning-light' : '' ?>">
                         <td><strong><?= e($u['username']) ?></strong></td>
                         <td><?= e($u['full_name']) ?></td>
                         <td>
-                            <span class="badge <?= $u['role'] === 'admin' ? 'badge-danger' : ($u['role'] === 'manager' ? 'badge-warning' : ($u['role'] === 'store_admin' ? 'badge-primary' : 'badge-info')) ?>">
-                                <?= e($u['role'] === 'store_admin' ? 'Store Admin' : ucfirst($u['role'])) ?>
+                            <span class="badge <?= $u['role'] === 'super_admin' ? 'badge-danger' : ($u['role'] === 'store_admin' ? 'badge-primary' : ($u['role'] === 'manager' ? 'badge-warning' : 'badge-info')) ?>">
+                                <?= $u['role'] === 'super_admin' ? 'Super Admin' : ($u['role'] === 'store_admin' ? 'Store Admin' : ucfirst($u['role'])) ?>
                             </span>
+                        </td>
+                        <td>
+                            <?php if ($u['role'] === 'super_admin'): ?>
+                                <span class="text-muted">All Stores</span>
+                            <?php elseif ($userStoreId && isset($storeMap[$userStoreId])): ?>
+                                <span class="badge badge-gray"><?= e($storeMap[$userStoreId]) ?></span>
+                            <?php elseif ($userStoreId): ?>
+                                <?php
+                                $sStmt = $db->prepare("SELECT name FROM stores WHERE id = ?");
+                                $sStmt->execute([$userStoreId]);
+                                $sName = $sStmt->fetchColumn();
+                                ?>
+                                <span class="badge badge-gray"><?= e($sName ?: 'Store #' . $userStoreId) ?></span>
+                            <?php else: ?>
+                                <span class="text-muted">—</span>
+                            <?php endif; ?>
                         </td>
                         <td>
                             <?php if ($u['status'] === 'pending'): ?>
@@ -111,7 +174,7 @@ $pendingCount = $pendingCount->fetchColumn();
                                 </form>
                             <?php else: ?>
                                 <a href="index.php?page=user-form&id=<?= (int) $u['id'] ?>" class="btn btn-sm btn-primary" title="Edit user"><i class="fas fa-edit"></i></a>
-                                <?php if ((int) $u['id'] !== (int) ($_SESSION['user']['id'] ?? 0)): ?>
+                                <?php if ((int) $u['id'] !== CURRENT_USER_ID): ?>
                                 <form method="post" action="index.php?page=users" style="display:inline" onsubmit="return confirm('Delete user <?= e($u['username']) ?>? This cannot be undone.')">
                                     <?= csrf_field() ?>
                                     <input type="hidden" name="delete" value="<?= (int) $u['id'] ?>">
@@ -122,6 +185,9 @@ $pendingCount = $pendingCount->fetchColumn();
                         </td>
                     </tr>
                 <?php endforeach; ?>
+                <?php if (empty($users)): ?>
+                    <tr><td colspan="7" class="text-center p-40 text-muted">No users found.</td></tr>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>

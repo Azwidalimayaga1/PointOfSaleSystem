@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
+$apiStoreId = requireApiStore($db, $user);
 
 switch ($method) {
     case 'GET':
@@ -60,7 +61,7 @@ switch ($method) {
         jsonResponse(['products' => $products, 'categories' => $categories]);
 
     case 'POST':
-        requireRole($user, 'admin', 'manager', 'store_admin');
+        requireRole($user, 'super_admin', 'manager', 'store_admin');
 
         $input = getJsonInput();
         $name = $input['name'] ?? '';
@@ -88,7 +89,7 @@ switch ($method) {
         jsonResponse(['success' => true, 'product_id' => $productId], 201);
 
     case 'PUT':
-        requireRole($user, 'admin', 'manager', 'store_admin');
+        requireRole($user, 'super_admin', 'manager', 'store_admin');
 
         if (!$id) {
             jsonResponse(['error' => 'Product ID required'], 400);
@@ -135,7 +136,7 @@ switch ($method) {
         jsonResponse(['success' => true]);
 
     case 'DELETE':
-        requireRole($user, 'admin', 'manager', 'store_admin');
+        requireRole($user, 'super_admin', 'manager', 'store_admin');
 
         if (!$id) {
             jsonResponse(['error' => 'Product ID required'], 400);

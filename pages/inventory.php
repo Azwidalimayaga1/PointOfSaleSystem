@@ -5,8 +5,13 @@ declare(strict_types=1);
 $search = $_GET['search'] ?? '';
 $filter = $_GET['filter'] ?? '';
 
-$sql = "SELECT * FROM products WHERE store_id = ?";
-$params = [activeStoreId()];
+if (isSuperAdmin()) {
+    $sql = "SELECT p.*, s.name as store_name FROM products p JOIN stores s ON s.id = p.store_id WHERE 1=1";
+    $params = [];
+} else {
+    $sql = "SELECT * FROM products WHERE store_id = ?";
+    $params = [activeStoreId()];
+}
 
 if ($search) {
     $sql .= " AND (name LIKE ? OR barcode LIKE ?)";
@@ -24,10 +29,6 @@ $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $products = $stmt->fetchAll();
 ?>
-<div class="page-header">
-    <h1><i class="fas fa-warehouse"></i> Inventory Management</h1>
-</div>
-
 <div class="card">
     <form method="get" class="search-bar">
         <input type="hidden" name="page" value="inventory">
@@ -49,6 +50,7 @@ $products = $stmt->fetchAll();
                 <tr>
                     <th>Product</th>
                     <th>Barcode</th>
+                    <?php if (isSuperAdmin()): ?><th>Store</th><?php endif; ?>
                     <th>Current Stock</th>
                     <th>Threshold</th>
                     <th>Stock Value</th>
@@ -58,7 +60,7 @@ $products = $stmt->fetchAll();
             </thead>
             <tbody>
                 <?php if (empty($products)): ?>
-                    <tr><td colspan="7" class="text-center p-40 text-muted">No products found.</td></tr>
+                    <tr><td colspan="<?= isSuperAdmin() ? 8 : 7 ?>" class="text-center p-40 text-muted">No products found.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($products as $p): ?>
                     <?php
@@ -69,6 +71,9 @@ $products = $stmt->fetchAll();
                     <tr>
                         <td><strong><?= e($p['name']) ?></strong></td>
                         <td><?= e($p['barcode'] ?? '-') ?></td>
+                        <?php if (isSuperAdmin()): ?>
+                        <td><span class="badge badge-primary"><?= e($p['store_name'] ?? 'Store #' . $p['store_id']) ?></span></td>
+                        <?php endif; ?>
                         <td>
                             <?php if ($isOut): ?>
                                 <span class="badge badge-danger">Out of Stock</span>
@@ -96,7 +101,7 @@ $products = $stmt->fetchAll();
                     </tr>
                     <?php if ($isLow || $isOut): ?>
                         <tr class="bg-danger-row">
-                            <td colspan="7" class="info-row">
+                            <td colspan="<?= isSuperAdmin() ? 8 : 7 ?>" class="info-row">
                                 <i class="fas fa-exclamation-circle"></i>
                                 <?php if ($isOut): ?>
                                     This product is out of stock!

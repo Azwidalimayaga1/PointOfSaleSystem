@@ -15,6 +15,8 @@ if (isset($_GET['export'])) {
         $data = getSalesItemsForExport($db, $period);
     } elseif ($tab === 'profit') {
         $data = profitReport($db, $period);
+    } elseif ($tab === 'coupons') {
+        $data = getMostUsedCoupons($db, $period, 100);
     } else {
         $data = [];
     }
@@ -74,15 +76,20 @@ $profitData = profitReport($db, $period);
 $inventoryData = inventoryReport($db);
 $salesItems = getSalesItemsForExport($db, $period);
 
+// Coupon / Discount data
+$discountImpact = getDiscountImpact($db, $period);
+$mostUsedCoupons = getMostUsedCoupons($db, $period);
+$couponCashierData = getCouponPerformanceByCashier($db, $period);
+
 // Summaries
 $totalSales = array_sum(array_column($salesData, 'total'));
 $totalTransactions = array_sum(array_column($salesData, 'transactions'));
 $totalProfit = array_sum(array_column($profitData, 'profit'));
 $totalRevenue = array_sum(array_column($profitData, 'revenue'));
 $totalCost = array_sum(array_column($profitData, 'cost'));
+$totalDiscountAmount = array_sum(array_column($salesData, 'discount_amount'));
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-file-alt"></i> Reports</h1>
     <div class="d-flex gap-8 align-center">
         <a href="?page=reports&period=<?= e($period) ?>&tab=<?= e($tab) ?>&export=csv" class="btn btn-sm btn-secondary"><i class="fas fa-file-csv"></i> CSV</a>
         <a href="?page=reports&period=<?= e($period) ?>&tab=<?= e($tab) ?>&export=pdf" class="btn btn-sm btn-danger"><i class="fas fa-file-pdf"></i> PDF</a>
@@ -118,6 +125,15 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
             <p>Products</p>
         </div>
     </div>
+    <?php if (in_array($userRole, ['super_admin', 'store_admin'], true)): ?>
+    <div class="stat-card">
+        <div class="stat-icon red"><i class="fas fa-tags"></i></div>
+        <div class="stat-info">
+            <h3><?= money($totalDiscountAmount) ?></h3>
+            <p>Total Discounts Given</p>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <div class="card">
@@ -138,6 +154,9 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
         <button class="tab <?= $tab === 'cashiers' ? 'active' : '' ?>" onclick="window.location.href='?page=reports&period=<?= e($period) ?>&tab=cashiers'">By Cashier</button>
         <button class="tab <?= $tab === 'profit' ? 'active' : '' ?>" onclick="window.location.href='?page=reports&period=<?= e($period) ?>&tab=profit'">Profit</button>
         <button class="tab <?= $tab === 'inventory' ? 'active' : '' ?>" onclick="window.location.href='?page=reports&period=<?= e($period) ?>&tab=inventory'">Inventory</button>
+        <?php if (in_array($userRole, ['super_admin', 'store_admin'], true)): ?>
+        <button class="tab <?= $tab === 'coupons' ? 'active' : '' ?>" onclick="window.location.href='?page=reports&period=<?= e($period) ?>&tab=coupons'">Coupons</button>
+        <?php endif; ?>
     </div>
 
     <?php if ($tab === 'sales'): ?>
@@ -247,6 +266,89 @@ $totalCost = array_sum(array_column($profitData, 'cost'));
                                     <span class="badge badge-success">OK</span>
                                 <?php endif; ?>
                             </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php elseif ($tab === 'coupons' && in_array($userRole, ['super_admin', 'store_admin'], true)): ?>
+        <!-- Discount Impact Summary -->
+        <div class="stats-grid mb-16">
+            <div class="stat-card">
+                <div class="stat-icon green"><i class="fas fa-tag"></i></div>
+                <div class="stat-info">
+                    <h3><?= money((float) ($discountImpact['total_discount_given'] ?? 0)) ?></h3>
+                    <p>Total Discounts Given</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon blue"><i class="fas fa-shopping-cart"></i></div>
+                <div class="stat-info">
+                    <h3><?= (int) ($discountImpact['discounted_transactions'] ?? 0) ?> / <?= (int) ($discountImpact['total_transactions'] ?? 0) ?></h3>
+                    <p>Discounted / Total Transactions</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon purple"><i class="fas fa-chart-line"></i></div>
+                <div class="stat-info">
+                    <h3><?= money((float) ($discountImpact['discounted_revenue'] ?? 0)) ?></h3>
+                    <p>Revenue After Discounts</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon yellow"><i class="fas fa-calculator"></i></div>
+                <div class="stat-info">
+                    <h3>
+                        <?php
+                        $totalRev = (float) ($discountImpact['discounted_revenue'] ?? 0) + (float) ($discountImpact['full_price_revenue'] ?? 0);
+                        $totalDisc = (float) ($discountImpact['total_discount_given'] ?? 0);
+                        $impactPct = $totalRev > 0 ? round(($totalDisc / $totalRev) * 100, 2) : 0;
+                        ?>
+                        <?= $impactPct ?>%
+                    </h3>
+                    <p>Discount Impact on Revenue</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Most Used Coupons -->
+        <h3 class="mb-12"><i class="fas fa-trophy"></i> Most Used Coupons</h3>
+        <div class="table-container mb-20">
+            <table>
+                <thead><tr><th>Coupon Code</th><th>Name</th><th>Type</th><th>Value</th><th>Times Used</th><th>Total Discount Given</th></tr></thead>
+                <tbody>
+                    <?php if (empty($mostUsedCoupons)): ?>
+                        <tr><td colspan="6" class="text-center p-40 text-muted">No coupons used in this period.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($mostUsedCoupons as $c): ?>
+                        <tr>
+                            <td><strong><?= e($c['code']) ?></strong></td>
+                            <td><?= e($c['name']) ?></td>
+                            <td><span class="badge badge-<?= $c['discount_type'] === 'percentage' ? 'info' : 'warning' ?>"><?= e($c['discount_type']) ?></span></td>
+                            <td><?= $c['discount_type'] === 'percentage' ? (float) $c['discount_value'] . '%' : money((float) $c['discount_value']) ?></td>
+                            <td><strong><?= (int) $c['usage_count'] ?></strong></td>
+                            <td><?= money((float) $c['total_discount_given']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Coupon Performance by Cashier -->
+        <h3 class="mb-12"><i class="fas fa-users"></i> Coupon Performance by Cashier</h3>
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Cashier</th><th>Coupon Transactions</th><th>Total Discount Given</th><th>Revenue After Discount</th></tr></thead>
+                <tbody>
+                    <?php if (empty($couponCashierData)): ?>
+                        <tr><td colspan="4" class="text-center p-40 text-muted">No coupon data for this period.</td></tr>
+                    <?php endif; ?>
+                    <?php foreach ($couponCashierData as $c): ?>
+                        <tr>
+                            <td><strong><?= e($c['cashier_name']) ?></strong></td>
+                            <td><?= (int) $c['coupon_transactions'] ?></td>
+                            <td><?= money((float) $c['total_discount_given']) ?></td>
+                            <td><?= money((float) $c['total_revenue']) ?></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>

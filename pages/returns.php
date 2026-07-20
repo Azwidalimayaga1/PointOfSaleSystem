@@ -2,8 +2,7 @@
 
 declare(strict_types=1);
 
-$user = $_SESSION['user'] ?? [];
-$userRole = $_SESSION['user']['role'] ?? userRole();
+$userRole = userRole();
 $receiptNumber = $_GET['receipt'] ?? $_POST['receipt'] ?? '';
 $sale = null;
 $saleItems = [];
@@ -86,23 +85,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             if (!$error) {
-                if ($userRole === 'admin') {
+                if (isSuperAdmin() || isStoreAdmin()) {
                     // Admin processes immediately
                     try {
                         $db->beginTransaction();
 
+                        $adminUser = [
+                            'id' => $_SESSION['user_id'],
+                            'full_name' => userName(),
+                            'username' => $_SESSION['user_name'],
+                        ];
                         $stmt = $db->prepare("INSERT INTO return_requests (sale_id, receipt_number, cashier_id, cashier_name, items, reason, resolution, refund_amount, exchange_product_id, exchange_product_name, exchange_qty, status, admin_id, admin_notes, store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,'approved',?,?,?)");
                         $stmt->execute([
-                            $sale['id'], $receiptNumber, $user['id'], userName(),
+                            $sale['id'], $receiptNumber, $_SESSION['user_id'], userName(),
                             json_encode($returnItems), $reason, $resolution, $refundAmount,
                             $resolution === 'exchange' ? $exchangeProductId : null,
                             $resolution === 'exchange' ? $exchangeProductName : null,
                             $resolution === 'exchange' ? $exchangeQty : 0,
-                            $user['id'], $_POST['admin_notes'] ?? 'Processed by admin',
+                            $_SESSION['user_id'], $_POST['admin_notes'] ?? 'Processed by admin',
                             activeStoreId()
                         ]);
 
-                        processReturnApproval($db, $returnItems, $reason, $resolution, $exchangeProductId, $exchangeQty, $user);
+                        processReturnApproval($db, $returnItems, $reason, $resolution, $exchangeProductId, $exchangeQty, $adminUser);
 
                         $db->commit();
                         $success = 'Return processed successfully.';
@@ -114,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     // Cashier submits for approval
                     $stmt = $db->prepare("INSERT INTO return_requests (sale_id, receipt_number, cashier_id, cashier_name, items, reason, resolution, refund_amount, exchange_product_id, exchange_product_name, exchange_qty, status, store_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,'pending',?)");
                     $stmt->execute([
-                        $sale['id'], $receiptNumber, $user['id'], userName(),
+                        $sale['id'], $receiptNumber, $_SESSION['user_id'], userName(),
                         json_encode($returnItems), $reason, $resolution, $refundAmount,
                         $resolution === 'exchange' ? $exchangeProductId : null,
                         $resolution === 'exchange' ? $exchangeProductName : null,
@@ -133,14 +137,10 @@ $recentSales = $db->query("SELECT receipt_number, cashier_name, total, created_a
 $myPending = [];
 if ($userRole === 'cashier') {
     $stmt = $db->prepare("SELECT * FROM return_requests WHERE cashier_id = ? AND store_id = ? ORDER BY created_at DESC LIMIT 10");
-    $stmt->execute([$user['id'], activeStoreId()]);
+    $stmt->execute([$_SESSION['user_id'], activeStoreId()]);
     $myPending = $stmt->fetchAll();
 }
 ?>
-<div class="page-header">
-    <h1><i class="fas fa-undo-alt"></i> Returns & Exchanges</h1>
-</div>
-
 <?php if ($error): ?>
     <div class="alert alert-danger"><?= e($error) ?></div>
 <?php endif; ?>
@@ -273,7 +273,7 @@ if ($userRole === 'cashier') {
             </div>
         </div>
 
-        <?php if ($userRole === 'admin'): ?>
+        <?php if (isSuperAdmin() || isStoreAdmin()): ?>
         <div class="form-group mt-16">
             <label for="admin-notes">Admin Notes (optional)</label>
             <input type="text" id="admin-notes" name="admin_notes" class="form-control" placeholder="Notes about this return...">
@@ -281,16 +281,17 @@ if ($userRole === 'cashier') {
         <?php endif; ?>
 
         <div class="d-flex gap-10 mt-16">
-            <button type="submit" class="btn btn-<?= $userRole === 'admin' ? 'success' : 'warning' ?> flex-1 justify-center">
-                <i class="fas fa-<?= $userRole === 'admin' ? 'check' : 'paper-plane' ?>"></i>
-                <?= $userRole === 'admin' ? 'Process Return' : 'Submit for Approval' ?>
+            <?php $canProcess = isSuperAdmin() || isStoreAdmin(); ?>
+            <button type="submit" class="btn btn-<?= $canProcess ? 'success' : 'warning' ?> flex-1 justify-center">
+                <i class="fas fa-<?= $canProcess ? 'check' : 'paper-plane' ?>"></i>
+                <?= $canProcess ? 'Process Return' : 'Submit for Approval' ?>
             </button>
         </div>
     </form>
 </div>
 <?php endif; ?>
 
-<?php if ($userRole === 'admin'): ?>
+<?php if (isSuperAdmin() || isStoreAdmin()): ?>
 <div class="card">
     <div class="card-header">
         <h2><i class="fas fa-list"></i> Pending Approval Requests</h2>

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+
+
 // Mark as read via POST only
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $csrf = $_POST['_csrf'] ?? '';
@@ -16,7 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (isset($_POST['mark_all_read'])) {
-        $db->exec("UPDATE messages SET is_read = 1");
+        if (isSuperAdmin()) {
+            $db->exec("UPDATE messages SET is_read = 1");
+        } else {
+            $stmt = $db->prepare("UPDATE messages SET is_read = 1 WHERE store_id = ?");
+            $stmt->execute([activeStoreId()]);
+        }
         redirect('index.php?page=admin-messages');
     }
 }
@@ -25,7 +32,6 @@ $messages = getAllMessages($db);
 $unread = getAllUnreadMessages($db);
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-envelope"></i> Messages from Staff</h1>
     <?php if (!empty($unread)): ?>
         <form method="post" action="index.php?page=admin-messages" style="display:inline">
             <?= csrf_field() ?>

@@ -78,6 +78,32 @@ function requireAuth(PDO $db): array
     return $user;
 }
 
+/**
+ * Resolve the store context from the authenticated API token, never from the
+ * browser session/global default store. Super admins may select a store with
+ * the X-Store-ID header; every other role is locked to its assigned store.
+ */
+function requireApiStore(PDO $db, array $user): int
+{
+    $storeId = (int) ($user['store_id'] ?? 0);
+
+    if (($user['role'] ?? '') === 'super_admin' && isset($_SERVER['HTTP_X_STORE_ID'])) {
+        $storeId = (int) $_SERVER['HTTP_X_STORE_ID'];
+    }
+
+    if ($storeId <= 0) {
+        jsonResponse(['error' => 'A store context is required for this API request.'], 400);
+    }
+
+    $stmt = $db->prepare("SELECT id FROM stores WHERE id = ? AND status = 'active'");
+    $stmt->execute([$storeId]);
+    if (!$stmt->fetchColumn()) {
+        jsonResponse(['error' => 'Invalid or inactive store.'], 400);
+    }
+
+    return $storeId;
+}
+
 function requireRole(array $user, string ...$roles): void
 {
     if (!in_array($user['role'], $roles, true)) {

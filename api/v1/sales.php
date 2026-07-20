@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
+$apiStoreId = requireApiStore($db, $user);
 
 switch ($method) {
     case 'GET':
@@ -68,21 +69,97 @@ switch ($method) {
                 jsonResponse(['error' => 'Invalid cart data'], 400);
             }
 
-            $subtotal = (float) ($input['subtotal'] ?? 0);
-            $discountPct = (float) ($input['discount'] ?? 0);
-            $tax = (float) ($input['tax'] ?? 0);
-            $total = (float) ($input['total'] ?? 0);
             $paymentMethod = $input['payment_method'] ?? 'cash';
             $cashAmount = (float) ($input['cash_amount'] ?? 0);
             $cardAmount = (float) ($input['card_amount'] ?? 0);
-            $changeAmount = (float) ($input['change_amount'] ?? 0);
             $customerId = isset($input['customer_id']) ? (int) $input['customer_id'] : null;
-            $customerName = $input['customer_name'] ?? null;
-            $customerEmail = $input['customer_email'] ?? null;
-            $customerPhone = $input['customer_phone'] ?? null;
+            $customerName = trim((string) ($input['customer_name'] ?? ''));
+            $customerEmail = trim((string) ($input['customer_email'] ?? ''));
+            $customerPhone = trim((string) ($input['customer_phone'] ?? ''));
 
             $db->beginTransaction();
             try {
+                $settings = getStoreSettings($db, $apiStoreId);
+                $allowedMethods = $settings['allowed_payment_methods'] ?? ['cash', 'card', 'mobile', 'mixed'];
+                if (!is_array($allowedMethods) || !$allowedMethods) {
+                    $allowedMethods = ['cash', 'card', 'mobile', 'mixed'];
+                }
+                if (!in_array($paymentMethod, $allowedMethods, true)) {
+                    throw new RuntimeException('Payment method is not enabled for this store.');
+                }
+
+                // Aggregate quantities before locking stock, so duplicate cart rows
+                // cannot bypass the stock check.
+                $quantities = [];
+                foreach ($cart as $item) {
+                    $productId = (int) ($item['id'] ?? $item['product_id'] ?? 0);
+                    $qty = (int) ($item['qty'] ?? $item['quantity'] ?? 0);
+                    if ($productId <= 0 || $qty <= 0 || $qty > 999) {
+                        throw new RuntimeException('Invalid product or quantity in cart.');
+                    }
+                    $quantities[$productId] = ($quantities[$productId] ?? 0) + $qty;
+                }
+
+                $lockedProduct = $db->prepare("SELECT id, name, price, cost_price, stock_quantity FROM products WHERE id = ? AND store_id = ? AND status = 'active' FOR UPDATE");
+                $verifiedItems = [];
+                $subtotal = 0.0;
+                foreach ($quantities as $productId => $qty) {
+                    $lockedProduct->execute([$productId, $apiStoreId]);
+                    $product = $lockedProduct->fetch();
+                    if (!$product || (int) $product['stock_quantity'] < $qty) {
+                        throw new RuntimeException('Insufficient stock for product ID ' . $productId . '.');
+                    }
+                    $price = (float) $product['price'];
+                    $lineTotal = $price * $qty;
+                    $subtotal += $lineTotal;
+                    $verifiedItems[] = [
+                        'id' => (int) $product['id'],
+                        'name' => $product['name'],
+                        'price' => $price,
+                        'cost_price' => (float) $product['cost_price'],
+                        'qty' => $qty,
+                        'previous_stock' => (int) $product['stock_quantity'],
+                        'total' => $lineTotal,
+                    ];
+                }
+
+                $discountPct = min(100, max(0, (float) ($input['discount_pct'] ?? $input['discount'] ?? 0)));
+                $maxDiscount = min(100, max(0, (float) ($settings['max_discount_percentage'] ?? 50)));
+                if (($user['role'] ?? '') === 'cashier') {
+                    if (empty($settings['cashier_can_apply_discounts']) && $discountPct > 0) {
+                        throw new RuntimeException('Cashiers are not permitted to apply manual discounts.');
+                    }
+                    $maxDiscount = min($maxDiscount, max(0, (float) ($settings['cashier_discount_limit'] ?? 0)));
+                }
+                if ($discountPct > $maxDiscount) {
+                    throw new RuntimeException('The requested discount exceeds your permitted limit.');
+                }
+                $discountAmount = round($subtotal * ($discountPct / 100), 2);
+                $tax = round(($subtotal - $discountAmount) * (TAX_RATE / 100), 2);
+                $total = round($subtotal - $discountAmount + $tax, 2);
+                if ($paymentMethod === 'cash' && $cashAmount < $total) {
+                    throw new RuntimeException('Insufficient cash payment.');
+                }
+                if ($paymentMethod === 'mixed' && ($cashAmount + $cardAmount) < $total) {
+                    throw new RuntimeException('Insufficient mixed payment.');
+                }
+                if (in_array($paymentMethod, ['card', 'mobile'], true)) {
+                    $cardAmount = $total;
+                }
+                $changeAmount = $paymentMethod === 'cash' ? $cashAmount - $total : ($paymentMethod === 'mixed' ? max(0, $cashAmount - ($total - $cardAmount)) : 0.0);
+
+                if ($customerId) {
+                    $customerStmt = $db->prepare("SELECT name, email, phone FROM customers WHERE id = ? AND store_id = ? FOR UPDATE");
+                    $customerStmt->execute([$customerId, $apiStoreId]);
+                    $customer = $customerStmt->fetch();
+                    if (!$customer) {
+                        throw new RuntimeException('Customer does not belong to this store.');
+                    }
+                    $customerName = $customer['name'];
+                    $customerEmail = $customer['email'] ?? '';
+                    $customerPhone = $customer['phone'] ?? '';
+                }
+
                 $receiptNumber = generateReceiptNumber($db);
 
                 $stmt = $db->prepare("INSERT INTO sales (receipt_number, cashier_id, cashier_name, subtotal, tax, tax_rate, discount, discount_type, total, payment_method, cash_amount, card_amount, change_amount, status, customer_id, customer_name, customer_email, customer_phone, store_id) VALUES (?, ?, ?, ?, ?, ?, ?, 'percentage', ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?)");
@@ -104,46 +181,29 @@ switch ($method) {
                     $customerName,
                     $customerEmail,
                     $customerPhone,
-                    ACTIVE_STORE_ID,
+                    $apiStoreId,
                 ]);
 
                 $saleId = (int) $db->lastInsertId();
 
                 $itemStmt = $db->prepare("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost_price, total) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                $stockStmt = $db->prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND store_id = ?");
+                $stockStmt = $db->prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND store_id = ? AND stock_quantity >= ?");
 
-                foreach ($cart as $item) {
-                    $productId = (int) ($item['id'] ?? $item['product_id'] ?? 0);
-                    $qty = (int) ($item['qty'] ?? $item['quantity'] ?? 1);
-                    $itemPrice = (float) ($item['price'] ?? 0);
-                    $itemName = $item['name'] ?? $item['product_name'] ?? '';
-                    $itemTotal = $itemPrice * $qty;
-
-                    $costStmt = $db->prepare("SELECT cost_price, stock_quantity FROM products WHERE id = ? AND store_id = ?");
-                    $costStmt->execute([$productId, ACTIVE_STORE_ID]);
-                    $prod = $costStmt->fetch();
-                    if (!$prod) {
-                        throw new RuntimeException("Product ID $productId not found in this store");
+                foreach ($verifiedItems as $item) {
+                    $newStock = $item['previous_stock'] - $item['qty'];
+                    $itemStmt->execute([$saleId, $item['id'], $item['name'], $item['qty'], $item['price'], $item['cost_price'], $item['total']]);
+                    $stockStmt->execute([$item['qty'], $item['id'], $apiStoreId, $item['qty']]);
+                    if ($stockStmt->rowCount() !== 1) {
+                        throw new RuntimeException('Stock changed while completing the sale. Please retry.');
                     }
-                    $costPrice = (float) ($prod['cost_price'] ?? 0);
-                    $prevStock = (int) ($prod['stock_quantity'] ?? 0);
-                    $newStock = $prevStock - $qty;
-
-                    if ($newStock < 0) {
-                        throw new RuntimeException("Insufficient stock for product: " . ($itemName ?: "ID $productId"));
-                    }
-
-                    $itemStmt->execute([$saleId, $productId, $itemName, $qty, $itemPrice, $costPrice, $itemTotal]);
-
-                    $stockStmt->execute([$qty, $productId, ACTIVE_STORE_ID]);
 
                     $adjStmt = $db->prepare("INSERT INTO stock_adjustments (product_id, user_id, user_name, type, quantity, previous_stock, new_stock, reason, store_id) VALUES (?, ?, ?, 'sale', ?, ?, ?, 'Sale', ?)");
-                    $adjStmt->execute([$productId, (int) $user['id'], $user['full_name'] ?: $user['username'], $qty, $prevStock, $newStock, ACTIVE_STORE_ID]);
+                    $adjStmt->execute([$item['id'], (int) $user['id'], $user['full_name'] ?: $user['username'], $item['qty'], $item['previous_stock'], $newStock, $apiStoreId]);
                 }
 
                 if ($customerId) {
-                    $db->prepare("UPDATE customers SET total_spent = total_spent + ?, visit_count = visit_count + 1 WHERE id = ?")
-                       ->execute([$total, $customerId]);
+                    $db->prepare("UPDATE customers SET total_spent = total_spent + ?, visit_count = visit_count + 1 WHERE id = ? AND store_id = ?")
+                       ->execute([$total, $customerId, $apiStoreId]);
                 }
 
                 logActivity($db, (int) $user['id'], $user['username'], 'sale', "Sale completed: $receiptNumber");

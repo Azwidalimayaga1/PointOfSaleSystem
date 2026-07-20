@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 ?>
-<div class="page-header"><h1><i class="fas fa-user"></i> <?= $id ? 'Edit' : 'Add' ?> Customer</h1><a href="index.php?page=customers" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a></div>
+<div class="page-header"><a href="index.php?page=customers" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a></div>
 <div class="card" style="max-width:600px">
 <?php if (isset($error)): ?><div class="alert alert-danger"><?= e($error) ?></div><?php endif; ?>
 <form method="post">

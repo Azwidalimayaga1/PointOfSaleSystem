@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
-$user = $_SESSION['user'] ?? [];
+
 $productId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $product = getProduct($db, $productId);
 if (!$product) redirect('index.php?page=inventory');
+
+// Store admin can only adjust their own store's products
+if (isStoreAdmin() && isset($product['store_id']) && (int) $product['store_id'] !== currentUserStoreId()) {
+    accessDenied();
+}
 
 $success = '';
 $errors = [];
@@ -19,8 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = $_POST['type'] ?? 'adjustment';
     $quantity = (int) ($_POST['quantity'] ?? 0);
     $reason = trim($_POST['reason'] ?? '');
-    $user = $_SESSION['user'];
-
     if ($quantity <= 0) {
         $errors[] = 'Quantity must be greater than 0.';
     }
@@ -39,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $db->prepare("UPDATE products SET stock_quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
         $stmt->execute([$newStock, $productId]);
 
-        recordStockAdjustment($db, $productId, $user['id'], $user['full_name'], $type, $quantity, $prevStock, $newStock, $reason);
+        recordStockAdjustment($db, $productId, $_SESSION['user_id'], userName(), $type, $quantity, $prevStock, $newStock, $reason);
         logAction($db, 'stock_adjustment', 'product', $productId, 'Stock adjusted for ' . $product['name'] . ': ' . $type . ' qty=' . $quantity . ' (prev: ' . $prevStock . ', new: ' . $newStock . ')' . ($reason ? ' reason: ' . $reason : ''));
 
         $success = 'Stock adjusted successfully.';
@@ -49,7 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-cubes"></i> Stock Adjustment: <?= e($product['name']) ?></h1>
     <a href="index.php?page=inventory" class="btn btn-outline"><i class="fas fa-arrow-left"></i> Back</a>
 </div>
 
@@ -62,7 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <div class="grid-2">
     <div class="card">
-        <h2 class="mb-16">Current Stock: <strong><?= (int) $product['stock_quantity'] ?></strong></h2>
+        <h2 class="mb-16">Product: <strong><?= e($product['name']) ?></strong></h2>
+        <h3 class="mb-16">Current Stock: <strong><?= (int) $product['stock_quantity'] ?></strong></h3>
         <form method="post">
             <?= csrf_field() ?>
             <div class="form-group">
@@ -101,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <th>From</th>
                             <th>To</th>
                             <th>By</th>
+                            <?php if (isSuperAdmin()): ?><th>Store</th><?php endif; ?>
                         </tr>
                     </thead>
                     <tbody>
@@ -112,6 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <td><?= (int) $h['previous_stock'] ?></td>
                                 <td><?= (int) $h['new_stock'] ?></td>
                                 <td><?= e($h['user_name']) ?></td>
+                                <?php if (isSuperAdmin()): ?>
+                                <td><span class="badge badge-primary"><?= e($h['store_name'] ?? 'Store #' . $h['store_id']) ?></span></td>
+                                <?php endif; ?>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>

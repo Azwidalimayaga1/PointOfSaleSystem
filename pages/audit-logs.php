@@ -42,7 +42,6 @@ $actionLabels = [
 ];
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-history"></i> System Audit Logs</h1>
     <div class="d-flex gap-8">
         <a href="?page=audit-logs&export=csv&search=<?= e($search) ?>&action=<?= e($actionFilter) ?>&entity_type=<?= e($entityFilter) ?>&from=<?= e($from) ?>&to=<?= e($to) ?>" class="btn btn-sm btn-success"><i class="fas fa-file-csv"></i> Export CSV</a>
         <button onclick="window.print()" class="btn btn-sm btn-primary"><i class="fas fa-file-pdf"></i> Export PDF</button>

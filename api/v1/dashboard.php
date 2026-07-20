@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
+$apiStoreId = requireApiStore($db, $user);
 
 if ($method !== 'GET') {
     jsonResponse(['error' => 'Method not allowed'], 405);

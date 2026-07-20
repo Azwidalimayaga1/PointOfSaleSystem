@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
-requireRole($user, 'admin', 'store_admin');
-$isSystemAdmin = $user['role'] === 'admin';
+$apiStoreId = requireApiStore($db, $user);
+requireRole($user, 'super_admin', 'store_admin');
+$isSystemAdmin = $user['role'] === 'super_admin';
 
 switch ($method) {
     case 'GET':
@@ -37,12 +38,12 @@ switch ($method) {
             jsonResponse(['error' => 'Username and full name required'], 400);
         }
 
-        if (!in_array($role, ['admin', 'manager', 'cashier', 'store_admin'], true)) {
+        if (!in_array($role, ['super_admin', 'admin', 'manager', 'cashier', 'store_admin'], true)) {
             jsonResponse(['error' => 'Invalid role'], 400);
         }
 
         // Store admin cannot create system admin users
-        if (!$isSystemAdmin && $role === 'admin') {
+        if (!$isSystemAdmin && ($role === 'super_admin' || $role === 'admin')) {
             jsonResponse(['error' => 'Forbidden: cannot assign System Admin role'], 403);
         }
 
@@ -91,10 +92,10 @@ switch ($method) {
         }
 
         if (isset($input['role'])) {
-            if (!in_array($input['role'], ['admin', 'manager', 'cashier', 'store_admin'], true)) {
+            if (!in_array($input['role'], ['super_admin', 'admin', 'manager', 'cashier', 'store_admin'], true)) {
                 jsonResponse(['error' => 'Invalid role'], 400);
             }
-            if (!$isSystemAdmin && $input['role'] === 'admin') {
+            if (!$isSystemAdmin && ($input['role'] === 'super_admin' || $input['role'] === 'admin')) {
                 jsonResponse(['error' => 'Forbidden: cannot assign System Admin role'], 403);
             }
             $fields[] = "role = ?";

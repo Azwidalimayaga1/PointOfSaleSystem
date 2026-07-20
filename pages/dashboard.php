@@ -2,20 +2,34 @@
 
 declare(strict_types=1);
 
-$userRole = $_SESSION['user']['role'] ?? userRole();
+$userRole = userRole();
+
+// Load dashboard customization from store settings
+$dashStoreSettings = getStoreSettings($db, activeStoreId());
+$dashWidgets = $dashStoreSettings['dashboard_widgets'] ?? [];
+$dashWelcomeMsg = $dashStoreSettings['dashboard_welcome_message'] ?? '';
+$dashDisplayName = $dashStoreSettings['store_display_name'] ?? '';
+
+if (empty($dashWidgets)) {
+    $dashWidgets = ['today_sales', 'transactions_today', 'low_stock_items', 'best_sellers', 'recent_sales', 'sales_target', 'reminders', 'staff_performance', 'pending_returns', 'active_coupons', 'stock_alerts', 'customer_followups'];
+}
+
 $todaySales = getTodaySales($db);
 $lowStock = getLowStockProducts($db);
 $recentSales = getRecentSales($db, 5, $userRole === 'cashier' ? userName() : '');
 
+// Today's discount stats
+$todayDiscountData = getDiscountImpact($db, 'today');
+
 // Per-cashier sales today
 $cashierSales = [];
-if (in_array($userRole, ['admin', 'manager'], true)) {
-    $stmt = $db->prepare("
-        SELECT cashier_name, COUNT(*) as transactions, SUM(total) as total
-        FROM sales WHERE DATE(created_at) = CURDATE() AND store_id = ?
-        GROUP BY cashier_name ORDER BY total DESC
-    ");
-    $stmt->execute([activeStoreId()]);
+if (in_array($userRole, ['super_admin', 'manager'], true)) {
+    if (isSuperAdmin()) {
+        $stmt = $db->query("SELECT cashier_name, COUNT(*) as transactions, SUM(total) as total FROM sales WHERE DATE(created_at) = CURDATE() GROUP BY cashier_name ORDER BY total DESC");
+    } else {
+        $stmt = $db->prepare("SELECT cashier_name, COUNT(*) as transactions, SUM(total) as total FROM sales WHERE DATE(created_at) = CURDATE() AND store_id = ? GROUP BY cashier_name ORDER BY total DESC");
+        $stmt->execute([activeStoreId()]);
+    }
     $cashierSales = $stmt->fetchAll();
 }
 
@@ -23,7 +37,7 @@ if (in_array($userRole, ['admin', 'manager'], true)) {
 $allTodaySales = null;
 $allLowStockCount = 0;
 $storeCount = 0;
-if ($userRole === 'admin') {
+if (isSuperAdmin()) {
     $stmt = $db->query("SELECT COALESCE(SUM(total),0) as total, COUNT(*) as count FROM sales WHERE DATE(created_at) = CURDATE()");
     $allTodaySales = $stmt->fetch();
     $stmt = $db->query("SELECT COUNT(*) FROM products WHERE stock_quantity <= low_stock_threshold AND status = 'active'");
@@ -55,31 +69,260 @@ if ($percentage >= 70) {
     $barColor = 'var(--gray-400)';
     $barClass = '';
 }
+
+// Current store name
+$currentStoreName = '';
+if (isStoreAdmin() || isManager()) {
+    $stmt = $db->prepare("SELECT name FROM stores WHERE id = ?");
+    $stmt->execute([activeStoreId()]);
+    $cs = $stmt->fetch();
+    $currentStoreName = $cs ? $cs['name'] : '';
+}
+
+// Get today's reminders for widget
+$todayReminders = [];
+if (isSuperAdmin()) {
+    $stmt = $db->query("SELECT cr.*, u.full_name as assigned_user_name, s.name as store_name FROM calendar_reminders cr LEFT JOIN users u ON u.id = cr.assigned_to_user_id LEFT JOIN stores s ON s.id = cr.store_id WHERE cr.status = 'pending' AND cr.reminder_date <= CURDATE() ORDER BY cr.priority DESC, cr.reminder_date ASC LIMIT 10");
+    $todayReminders = $stmt->fetchAll();
+} elseif (isStoreAdmin() || isManager()) {
+    $stmt = $db->prepare("SELECT cr.*, u.full_name as assigned_user_name, s.name as store_name FROM calendar_reminders cr LEFT JOIN users u ON u.id = cr.assigned_to_user_id LEFT JOIN stores s ON s.id = cr.store_id WHERE cr.status = 'pending' AND cr.reminder_date <= CURDATE() AND cr.store_id = ? ORDER BY cr.priority DESC, cr.reminder_date ASC LIMIT 10");
+    $stmt->execute([activeStoreId()]);
+    $todayReminders = $stmt->fetchAll();
+} elseif (isCashier()) {
+    $stmt = $db->prepare("SELECT cr.*, u.full_name as assigned_user_name, s.name as store_name FROM calendar_reminders cr LEFT JOIN users u ON u.id = cr.assigned_to_user_id LEFT JOIN stores s ON s.id = cr.store_id WHERE cr.status = 'pending' AND cr.reminder_date <= CURDATE() AND (cr.assigned_to_user_id = ? OR (cr.is_store_wide = 1 AND cr.store_id = ?)) ORDER BY cr.priority DESC, cr.reminder_date ASC LIMIT 10");
+    $stmt->execute([CURRENT_USER_ID, currentUserStoreId()]);
+    $todayReminders = $stmt->fetchAll();
+}
+$pendingReminderCount = count($todayReminders);
+$overdueReminders = array_filter($todayReminders, fn($r) => $r['reminder_date'] < date('Y-m-d'));
+$dashboardHour = (int) date('G');
+$dashboardGreeting = $dashboardHour < 12 ? 'Good morning' : ($dashboardHour < 18 ? 'Good afternoon' : 'Good evening');
 ?>
 
-<!-- Dashboard Header -->
-<div class="page-header">
-    <h1><i class="fas fa-chart-bar"></i> Dashboard</h1>
-    <span class="badge badge-info fs-12"><?= date('l, F j, Y') ?></span>
+<section class="dashboard-hero" aria-labelledby="dashboard-hero-title">
+    <div>
+        <p class="workspace-eyebrow"><i class="fas fa-chart-line" aria-hidden="true"></i> <?= e(date('l, j F')) ?></p>
+        <h1 id="dashboard-hero-title"><?= e($dashboardGreeting) ?>, <?= e(userName() ?: 'there') ?></h1>
+        <p><?= e($dashWelcomeMsg ?: 'Here is your store at a glance. Start with the items that need attention today.') ?></p>
+    </div>
+    <div class="dashboard-hero-actions">
+        <a href="index.php?page=sales" class="btn btn-primary"><i class="fas fa-cash-register"></i> New Sale</a>
+        <?php if (!isCashier()): ?>
+        <a href="index.php?page=inventory" class="btn btn-outline"><i class="fas fa-boxes"></i> Inventory</a>
+        <?php endif; ?>
+        <a href="index.php?page=calendar" class="btn btn-outline"><i class="fas fa-calendar-alt"></i> Calendar</a>
+    </div>
+</section>
+
+<?php if (isCashier()): ?>
+<!-- ===== CASHIER DASHBOARD ===== -->
+
+<!-- Cashier Profile Card -->
+<div class="cashier-profile-card mb-16">
+    <div class="cashier-avatar"><?= e(strtoupper(substr(userName() ?? 'C', 0, 1))) ?></div>
+    <div>
+        <div class="fs-18 fw-bold"><?= e(userName() ?? 'Cashier') ?></div>
+        <div class="fs-13 text-muted">Cashier &middot; <?= e($dashDisplayName ?: ($currentStoreName ?: STORE_NAME)) ?></div>
+        <?php if ($dashWelcomeMsg): ?>
+            <div class="fs-12 text-muted mt-4"><?= e($dashWelcomeMsg) ?></div>
+        <?php endif; ?>
+    </div>
+    <div class="ml-auto d-flex gap-8">
+        <a href="index.php?page=sales" class="btn btn-primary"><i class="fas fa-shopping-cart"></i> New Sale</a>
+        <a href="index.php?page=calendar" class="btn btn-outline"><i class="fas fa-calendar-alt"></i> My Reminders</a>
+    </div>
 </div>
+
+<!-- Stats -->
+<div class="cashier-dash-grid">
+    <div class="stat-card">
+        <div class="stat-icon blue"><i class="fas fa-wallet"></i></div>
+        <div class="stat-info">
+            <h3 class="stat-value"><?= money($todayTotal) ?></h3>
+            <p>My Sales Today</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green"><i class="fas fa-receipt"></i></div>
+        <div class="stat-info">
+            <h3 class="stat-value"><?= (int) $todaySales['count'] ?></h3>
+            <p>My Transactions Today</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon purple"><i class="fas fa-chart-line"></i></div>
+        <div class="stat-info">
+            <h3 class="stat-value"><?= $percentage ?>%</h3>
+            <p>Sales Target Progress</p>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon <?= $pendingReminderCount > 0 ? 'red' : 'green' ?>"><i class="fas fa-bell"></i></div>
+        <div class="stat-info">
+            <h3 class="stat-value"><?= $pendingReminderCount ?></h3>
+            <p>Pending Reminders</p>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="cashier-quick-actions">
+    <a href="index.php?page=sales" class="cashier-quick-action">
+        <i class="fas fa-cash-register"></i>
+        <span>Start Sale</span>
+    </a>
+    <a href="index.php?page=sales" class="cashier-quick-action">
+        <i class="fas fa-pause-circle"></i>
+        <span>Continue Held Sale</span>
+    </a>
+    <a href="index.php?page=receipt" class="cashier-quick-action">
+        <i class="fas fa-clock"></i>
+        <span>Recent Sales</span>
+    </a>
+    <a href="index.php?page=calendar" class="cashier-quick-action">
+        <i class="fas fa-calendar-check"></i>
+        <span>My Reminders</span>
+    </a>
+</div>
+
+<!-- Sales Progress & Recent Sales -->
+<div class="grid-2 mb-20">
+    <div class="card">
+        <div class="card-header">
+            <h2><i class="fas fa-chart-line"></i> My Sales Progress</h2>
+        </div>
+        <div class="d-grid gap-12">
+            <div class="sales-progress-grid">
+                <div>
+                    <div class="fs-12 text-muted">Target</div>
+                    <div class="fs-18 fw-bold"><?= money($dailyTarget) ?></div>
+                </div>
+                <div>
+                    <div class="fs-12 text-muted">My Sales</div>
+                    <div class="fs-18 fw-bold text-primary"><?= money($todayTotal) ?></div>
+                </div>
+                <div>
+                    <div class="fs-12 text-muted">Remaining</div>
+                    <div class="fs-18 fw-bold <?= $remaining > 0 ? 'text-danger' : 'text-success' ?>"><?= money($remaining) ?></div>
+                </div>
+                <div>
+                    <div class="fs-12 text-muted">Completed</div>
+                    <div class="fs-18 fw-bold"><?= $percentage ?>%</div>
+                </div>
+            </div>
+            <div class="progress-bar lg">
+                <div class="progress-fill <?= $barClass ?>" style="width:<?= $percentage ?>%"></div>
+            </div>
+            <div class="text-center fw-semibold fs-14" style="color:<?= $barColor ?>">
+                <i class="fas fa-<?= $percentage >= 70 ? 'trophy' : ($percentage >= 40 ? 'arrow-up' : ($percentage > 0 ? 'clock' : 'circle')) ?>"></i>
+                <?= e($statusText) ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" id="recent-sales">
+        <div class="card-header">
+            <h2><i class="fas fa-clock"></i> My Recent Sales</h2>
+            <a href="index.php?page=sales" class="btn btn-sm btn-outline"><i class="fas fa-shopping-cart"></i> View All</a>
+        </div>
+        <?php if (empty($recentSales)): ?>
+        <div class="empty-state">
+            <i class="fas fa-shopping-cart"></i>
+            <p>No sales recorded yet today.</p>
+        </div>
+        <?php else: ?>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Receipt #</th>
+                        <th>Payment</th>
+                        <th>Total</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($recentSales as $sale): ?>
+                        <tr>
+                            <td class="nowrap"><?= e($sale['receipt_number']) ?></td>
+                            <td><span class="badge badge-gray"><?= e(ucfirst($sale['payment_method'] ?? 'N/A')) ?></span></td>
+                            <td><strong><?= money((float) $sale['total']) ?></strong></td>
+                            <td class="text-muted"><?= e(date('H:i', strtotime($sale['created_at']))) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- Today's Reminders -->
+<div class="card">
+    <div class="card-header">
+        <h2><i class="fas fa-bell"></i> My Reminders Today</h2>
+        <a href="index.php?page=calendar" class="btn btn-sm btn-outline"><i class="fas fa-calendar-alt"></i> Open Calendar</a>
+    </div>
+    <?php if (empty($todayReminders)): ?>
+    <div class="empty-state">
+        <i class="fas fa-check-circle text-success"></i>
+        <p>No pending reminders. You're all caught up!</p>
+    </div>
+    <?php else: ?>
+    <div class="d-grid gap-8">
+        <?php foreach ($todayReminders as $r):
+            $isOverdue = $r['reminder_date'] < date('Y-m-d');
+            $priClass = $r['priority'] === 'urgent' ? 'pri-urgent' : ($r['priority'] === 'high' ? 'pri-high' : ($r['priority'] === 'medium' ? 'pri-medium' : 'pri-low'));
+        ?>
+        <div class="reminder-item <?= $priClass ?> <?= $isOverdue ? 'overdue' : '' ?>">
+            <span class="priority-dot <?= $priClass ?>"></span>
+            <div>
+                <div class="fw-semibold fs-13"><?= e($r['title']) ?></div>
+                <div class="fs-11 text-muted">
+                    <?php if ($r['reminder_time']): ?><?= e(substr($r['reminder_time'], 0, 5)) ?> &middot; <?php endif; ?>
+                    <?= e($r['assigned_user_name'] ? 'Assigned to: ' . $r['assigned_user_name'] : 'Store-wide') ?>
+                    <?php if ($isOverdue): ?><span class="badge badge-danger ml-4">Overdue</span><?php endif; ?>
+                </div>
+            </div>
+            <div class="ml-auto">
+                <button class="btn btn-sm btn-success" onclick="fetch('index.php?page=calendar&action=ajax',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=complete&id=<?= (int) $r['id'] ?>&_csrf=<?= csrf_token() ?>'}).then(r=>r.json()).then(d=>{if(d.success)location.reload()})"><i class="fas fa-check"></i></button>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</div>
+
+<?php else: ?>
+<!-- ===== ADMIN / MANAGER DASHBOARD ===== -->
+
+<?php if (isStoreAdmin() && $currentStoreName): ?>
+<div class="alert alert-info mb-16" style="display:flex;align-items:center;gap:10px;padding:10px 16px">
+    <i class="fas fa-store" style="font-size:18px"></i>
+    <strong>Managing: <?= e($dashDisplayName ?: $currentStoreName) ?></strong>
+    <?php if ($dashWelcomeMsg): ?>
+        <span class="text-muted fs-12 ml-8">— <?= e($dashWelcomeMsg) ?></span>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- Stats Cards -->
 <div class="stats-grid">
     <div class="stat-card">
         <div class="stat-icon blue"><i class="fas fa-wallet"></i></div>
         <div class="stat-info">
-            <h3 class="stat-value"><?= money((float) ($userRole === 'admin' ? ($allTodaySales['total'] ?? 0) : $todaySales['total'])) ?></h3>
-            <p><?= $userRole === 'admin' ? 'All Stores Today' : "Today's Sales" ?></p>
+            <h3 class="stat-value"><?= money((float) $todaySales['total']) ?></h3>
+            <p>Today's Sales<?= isSuperAdmin() ? ' (All Stores)' : '' ?></p>
         </div>
     </div>
     <div class="stat-card">
         <div class="stat-icon green"><i class="fas fa-receipt"></i></div>
         <div class="stat-info">
-            <h3 class="stat-value"><?= (int) ($userRole === 'admin' ? ($allTodaySales['count'] ?? 0) : $todaySales['count']) ?></h3>
-            <p><?= $userRole === 'admin' ? 'Transactions All Stores' : 'Transactions Today' ?></p>
+            <h3 class="stat-value"><?= (int) $todaySales['count'] ?></h3>
+            <p>Transactions Today<?= isSuperAdmin() ? ' (All Stores)' : '' ?></p>
         </div>
     </div>
-    <?php if ($userRole === 'admin'): ?>
+    <?php if (isSuperAdmin()): ?>
     <div class="stat-card">
         <div class="stat-icon purple"><i class="fas fa-store"></i></div>
         <div class="stat-info">
@@ -91,7 +334,7 @@ if ($percentage >= 70) {
         <div class="stat-icon red"><i class="fas fa-exclamation-triangle"></i></div>
         <div class="stat-info">
             <h3 class="stat-value"><?= $allLowStockCount ?></h3>
-            <p>Low Stock Items</p>
+            <p>Low Stock Items (All)</p>
         </div>
     </div>
     <?php elseif ($userRole !== 'cashier'): ?>
@@ -103,16 +346,55 @@ if ($percentage >= 70) {
         </div>
     </div>
     <?php endif; ?>
+    <?php if (in_array($userRole, ['super_admin', 'store_admin'], true)): ?>
+    <div class="stat-card">
+        <div class="stat-icon red"><i class="fas fa-tags"></i></div>
+        <div class="stat-info">
+            <h3 class="stat-value"><?= money((float) ($todayDiscountData['total_discount_given'] ?? 0)) ?></h3>
+            <p>Discounts Given Today</p>
+        </div>
+    </div>
+    <?php endif; ?>
     <div class="stat-card">
         <div class="stat-icon purple"><i class="fas fa-user-shield"></i></div>
         <div class="stat-info">
-            <h3 class="stat-value" style="font-size:16px"><?= e(ucfirst(userRole() ?? '')) ?></h3>
+            <h3 class="stat-value" style="font-size:16px"><?= e($roleDisplay ?? ucfirst(userRole() ?? '')) ?></h3>
             <p><?= e(userName() ?? '') ?></p>
         </div>
     </div>
 </div>
 
-<?php if ($userRole === 'admin'): ?>
+<!-- Today's Reminders Widget -->
+<?php if (!empty($todayReminders)): ?>
+<div class="card mb-20">
+    <div class="card-header">
+        <h2><i class="fas fa-bell"></i> Today's Reminders <?= count($overdueReminders) > 0 ? '<span class="badge badge-danger">' . count($overdueReminders) . ' Overdue</span>' : '' ?></h2>
+        <a href="index.php?page=calendar" class="btn btn-sm btn-outline"><i class="fas fa-calendar-alt"></i> Calendar</a>
+    </div>
+    <div class="d-grid gap-8">
+        <?php foreach ($todayReminders as $r):
+            $isOverdue = $r['reminder_date'] < date('Y-m-d');
+            $priClass = $r['priority'] === 'urgent' ? 'pri-urgent' : ($r['priority'] === 'high' ? 'pri-high' : ($r['priority'] === 'medium' ? 'pri-medium' : 'pri-low'));
+        ?>
+        <div class="reminder-item <?= $priClass ?> <?= $isOverdue ? 'overdue' : '' ?>" style="cursor:default">
+            <span class="priority-dot <?= $priClass ?>"></span>
+            <div class="flex-1">
+                <div class="fw-semibold fs-13"><?= e($r['title']) ?></div>
+                <div class="fs-11 text-muted">
+                    <?= e($r['store_name'] ?? '') ?>
+                    <?php if ($r['reminder_time']): ?> &middot; <?= e(substr($r['reminder_time'], 0, 5)) ?><?php endif; ?>
+                    <?php if ($r['assigned_user_name']): ?> &middot; <?= e($r['assigned_user_name']) ?><?php endif; ?>
+                    <?php if ($isOverdue): ?><span class="badge badge-danger ml-4">Overdue</span><?php endif; ?>
+                </div>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="fetch('index.php?page=calendar&action=ajax',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'action=complete&id=<?= (int) $r['id'] ?>&_csrf=<?= csrf_token() ?>'}).then(r=>r.json()).then(d=>{if(d.success)location.reload()})"><i class="fas fa-check"></i> Done</button>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if (isSuperAdmin()): ?>
 <?php
 $allStores = getStores($db);
 $storeData = [];
@@ -173,9 +455,8 @@ $rankings = getStorePerformanceRankings($db, $perfPeriod);
 </div>
 
 <?php
-// Handle backup action
 $backupResult = null;
-if (isset($_GET['run_backup'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['run_backup']) && isSuperAdmin() && validate_csrf($_POST['_csrf'] ?? '')) {
     $backupResult = runBackup($db);
     logAction($db, 'backup_run', 'backup', null, $backupResult['message']);
 }
@@ -239,12 +520,17 @@ $statusInactive = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = '
         <?php endif; ?>
     </div>
 
-    <!-- System Health - Compact -->
+    <!-- System Health -->
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-heartbeat"></i> System Health</h2>
             <div class="d-flex gap-6">
-                <a href="?page=dashboard&run_backup=1" class="btn btn-sm btn-primary"><i class="fas fa-database"></i> Backup</a>
+                <?php if (isSuperAdmin()): ?>
+                <form method="post" class="d-inline">
+                    <?= csrf_field() ?>
+                    <button type="submit" name="run_backup" value="1" class="btn btn-sm btn-primary"><i class="fas fa-database"></i> Backup</button>
+                </form>
+                <?php endif; ?>
             </div>
         </div>
         <?php if ($backupResult): ?>
@@ -275,20 +561,13 @@ $statusInactive = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = '
             </summary>
             <div class="table-container mt-8">
                 <table style="font-size:11px">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>File</th>
-                            <th>Size</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Date</th><th>File</th><th>Size</th><th>Status</th></tr></thead>
                     <tbody>
                         <?php foreach ($backupHistory as $b): ?>
                         <tr>
                             <td class="nowrap"><?= e(date('Y-m-d H:i', strtotime($b['created_at']))) ?></td>
                             <td class="text-truncate" style="max-width:100px"><?= e($b['filename']) ?></td>
-                            <td><?= $b['file_size'] > 0 ? round((int) $b['file_size'] / 1024, 1) . ' KB' : '—' ?></td>
+                            <td><?= $b['file_size'] > 0 ? round((int) $b['file_size'] / 1024, 1) . ' KB' : '&mdash;' ?></td>
                             <td><span class="badge <?= $b['status'] === 'completed' ? 'badge-success' : 'badge-danger' ?>"><?= e($b['status']) ?></span></td>
                         </tr>
                         <?php endforeach; ?>
@@ -303,21 +582,16 @@ $statusInactive = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = '
     </div>
 </div>
 
-<!-- Today's Sales by Store Chart + Store Status doughnut -->
+<!-- Charts -->
 <div class="grid-2 mb-20">
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-chart-bar"></i> Today's Sales by Store</h2>
         </div>
         <?php if (empty($allStores) || array_sum(array_map(fn($s) => (float) ($storeData[$s['id']]['today_sales'] ?? 0), $allStores)) === 0): ?>
-        <div class="empty-state">
-            <i class="fas fa-chart-bar"></i>
-            <p>No sales yet today. Transactions will appear here once sales are made.</p>
-        </div>
+        <div class="empty-state"><i class="fas fa-chart-bar"></i><p>No sales yet today.</p></div>
         <?php else: ?>
-        <div style="height:240px">
-            <canvas id="dashSalesByStoreChart" class="w-full h-full"></canvas>
-        </div>
+        <div style="height:240px"><canvas id="dashSalesByStoreChart" class="w-full h-full"></canvas></div>
         <?php endif; ?>
     </div>
     <div class="card">
@@ -325,32 +599,21 @@ $statusInactive = (int) $db->query("SELECT COUNT(*) FROM stores WHERE status = '
             <h2><i class="fas fa-chart-pie"></i> Store Status</h2>
         </div>
         <?php if ($statusActive === 0 && $statusPending === 0 && $statusInactive === 0): ?>
-        <div class="empty-state">
-            <i class="fas fa-chart-pie"></i>
-            <p>No stores configured yet.</p>
-        </div>
+        <div class="empty-state"><i class="fas fa-chart-pie"></i><p>No stores configured yet.</p></div>
         <?php else: ?>
-        <div class="d-flex justify-center" style="height:240px">
-            <canvas id="dashStatusChart" style="max-width:260px;height:100%"></canvas>
-        </div>
+        <div class="d-flex justify-center" style="height:240px"><canvas id="dashStatusChart" style="max-width:260px;height:100%"></canvas></div>
         <?php endif; ?>
     </div>
 </div>
 
-<!-- Products by Store Chart -->
 <div class="card mb-20">
     <div class="card-header">
         <h2><i class="fas fa-boxes"></i> Products by Store</h2>
     </div>
     <?php if (empty($allStores)): ?>
-    <div class="empty-state">
-        <i class="fas fa-boxes"></i>
-        <p>No store data available yet.</p>
-    </div>
+    <div class="empty-state"><i class="fas fa-boxes"></i><p>No store data available yet.</p></div>
     <?php else: ?>
-    <div style="height:240px">
-        <canvas id="dashProductsByStoreChart" class="w-full h-full"></canvas>
-    </div>
+    <div style="height:240px"><canvas id="dashProductsByStoreChart" class="w-full h-full"></canvas></div>
     <?php endif; ?>
 </div>
 
@@ -397,10 +660,7 @@ document.addEventListener('DOMContentLoaded', function () {
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, boxWidth: 8 } },
-                    tooltip: { backgroundColor: '#1e293b', cornerRadius: 6, padding: 8 }
-                },
+                plugins: { legend: { position: 'bottom', labels: { padding: 12, usePointStyle: true, boxWidth: 8 } }, tooltip: { backgroundColor: '#1e293b', cornerRadius: 6, padding: 8 } },
                 cutout: '70%',
             }
         });
@@ -434,28 +694,23 @@ document.addEventListener('DOMContentLoaded', function () {
     <?php endif; ?>
 });
 </script>
-<?php endif; /* admin */ ?>
+<?php endif; /* super_admin */ ?>
 
-<!-- Stock Alerts and Recent Sales (admin) -->
-<?php if ($userRole === 'admin'): ?>
+<!-- Stock Alerts and Recent Sales (super_admin) -->
+<?php if (isSuperAdmin()): ?>
 <?php
 $allLowStock = getAllLowStockProducts($db, 30);
 $allRecentSales = getRecentSalesAllStores($db, 8);
 ?>
 <div class="grid-2 mb-20">
-    <!-- Stock Alerts -->
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-exclamation-triangle"></i> Stock Alerts</h2>
             <a href="index.php?page=inventory" class="btn btn-sm btn-outline"><i class="fas fa-boxes"></i> Inventory</a>
         </div>
         <?php if (empty($allLowStock)): ?>
-        <div class="empty-state">
-            <i class="fas fa-check-circle text-success"></i>
-            <p>All products are well-stocked across all stores.</p>
-        </div>
+        <div class="empty-state"><i class="fas fa-check-circle text-success"></i><p>All products are well-stocked across all stores.</p></div>
         <?php else:
-        // Categorize stock
         $highAlert = array_filter($allLowStock, fn($p) => (int) $p['stock_quantity'] === 0 || $p['status'] !== 'active');
         $lowStockItems = array_filter($allLowStock, fn($p) => (int) $p['stock_quantity'] > 0 && (int) $p['stock_quantity'] <= (int) $p['low_stock_threshold']);
         ?>
@@ -465,15 +720,7 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
         </div>
         <div class="table-container">
             <table>
-                <thead>
-                    <tr>
-                        <th>Product</th>
-                        <th>Store</th>
-                        <th>Stock</th>
-                        <th>Threshold</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Product</th><th>Store</th><th>Stock</th><th>Threshold</th><th>Status</th></tr></thead>
                 <tbody>
                     <?php foreach ($highAlert as $p): ?>
                     <tr>
@@ -499,30 +746,17 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
         <?php endif; ?>
     </div>
 
-    <!-- Recent Sales -->
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-clock"></i> Recent Sales</h2>
             <a href="index.php?page=sales" class="btn btn-sm btn-outline"><i class="fas fa-shopping-cart"></i> View All</a>
         </div>
         <?php if (empty($allRecentSales)): ?>
-        <div class="empty-state">
-            <i class="fas fa-shopping-cart"></i>
-            <p>No sales have been made yet.</p>
-        </div>
+        <div class="empty-state"><i class="fas fa-shopping-cart"></i><p>No sales have been made yet.</p></div>
         <?php else: ?>
         <div class="table-container">
             <table>
-                <thead>
-                    <tr>
-                        <th>Receipt</th>
-                        <th>Store</th>
-                        <th>Cashier</th>
-                        <th>Payment</th>
-                        <th>Total</th>
-                        <th>Time</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Receipt</th><th>Store</th><th>Cashier</th><th>Payment</th><th>Total</th><th>Time</th></tr></thead>
                 <tbody>
                     <?php foreach ($allRecentSales as $sale): ?>
                     <tr>
@@ -541,7 +775,7 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
     </div>
 </div>
 
-<?php else: /* Non-admin roles - manager, cashier, store_admin */ ?>
+<?php else: /* store_admin / manager dashboard */ ?>
 
 <!-- Sales Progress -->
 <div class="grid-2 mb-20">
@@ -578,35 +812,23 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
         </div>
     </div>
 
-    <?php if ($userRole !== 'cashier'): ?>
     <!-- Low Stock Items -->
     <div class="card">
         <div class="card-header">
             <h2><i class="fas fa-exclamation-triangle"></i> Low Stock Items</h2>
         </div>
         <?php if (empty($lowStock)): ?>
-        <div class="empty-state">
-            <i class="fas fa-check-circle text-success"></i>
-            <p>All products are well-stocked.</p>
-        </div>
+        <div class="empty-state"><i class="fas fa-check-circle text-success"></i><p>All products are well-stocked.</p></div>
         <?php else: ?>
         <div class="table-container">
             <table>
-                <thead>
-                    <tr>
-                        <th>Product</th>
-                        <th>Stock</th>
-                        <th>Threshold</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Product</th><th>Stock</th><th>Threshold</th><th>Status</th></tr></thead>
                 <tbody>
                     <?php foreach ($lowStock as $p):
                         $sQty = (int) $p['stock_quantity'];
                         $threshold = (int) $p['low_stock_threshold'];
                         $pct = $threshold > 0 ? min(100, round(($sQty / $threshold) * 100)) : 0;
                         $isOut = $sQty === 0;
-                        $isLow = $sQty > 0 && $sQty < $threshold;
                     ?>
                     <tr>
                         <td><strong><?= e($p['name']) ?></strong></td>
@@ -623,10 +845,9 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
         </div>
         <?php endif; ?>
     </div>
-    <?php endif; ?>
 </div>
 
-<?php if (!empty($cashierSales) && in_array($userRole, ['manager'], true)): ?>
+<?php if (!empty($cashierSales) && in_array($userRole, ['super_admin', 'manager'], true)): ?>
 <!-- Cashier Progress -->
 <div class="card">
     <div class="card-header">
@@ -659,29 +880,18 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
 </div>
 <?php endif; ?>
 
-<!-- Recent Sales (non-admin) -->
+<!-- Recent Sales -->
 <div class="card">
     <div class="card-header">
         <h2><i class="fas fa-clock"></i> Recent Sales</h2>
         <a href="index.php?page=sales" class="btn btn-sm btn-outline"><i class="fas fa-shopping-cart"></i> View All</a>
     </div>
     <?php if (empty($recentSales)): ?>
-    <div class="empty-state">
-        <i class="fas fa-shopping-cart"></i>
-        <p>No sales recorded today.</p>
-    </div>
+    <div class="empty-state"><i class="fas fa-shopping-cart"></i><p>No sales recorded today.</p></div>
     <?php else: ?>
     <div class="table-container">
         <table>
-            <thead>
-                <tr>
-                    <th>Receipt #</th>
-                    <th>Cashier</th>
-                    <th>Payment</th>
-                    <th>Total</th>
-                    <th>Time</th>
-                </tr>
-            </thead>
+            <thead><tr><th>Receipt #</th><th>Cashier</th><th>Payment</th><th>Total</th><th>Time</th></tr></thead>
             <tbody>
                 <?php foreach ($recentSales as $sale): ?>
                     <tr>
@@ -698,7 +908,9 @@ $allRecentSales = getRecentSalesAllStores($db, 8);
     <?php endif; ?>
 </div>
 
-<?php endif; /* end admin vs non-admin split */ ?>
+<?php endif; /* end super_admin vs store_admin split */ ?>
+
+<?php endif; /* end cashier vs admin split */ ?>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {

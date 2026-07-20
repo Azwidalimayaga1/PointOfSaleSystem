@@ -12,6 +12,9 @@ $success = '';
 $stores = $db->query("SELECT * FROM stores WHERE status = 'active' ORDER BY name ASC")->fetchAll();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        $error = 'Your session expired. Please refresh and try again.';
+    } else {
     $username = trim($_POST['username'] ?? '');
     $fullName = trim($_POST['full_name'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -20,8 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$username || !$fullName || !$password) {
         $error = 'All fields are required.';
-    } elseif (strlen($password) < 8) {
-        $error = 'Password must be at least 8 characters.';
+    } elseif (strlen($password) < 12) {
+        $error = 'Password must be at least 12 characters.';
     } elseif ($password !== $confirm) {
         $error = 'Passwords do not match.';
     } else {
@@ -41,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $success = 'Registration submitted! Wait for admin approval before logging in.';
             }
         }
+    }
     }
 }
 ?>
@@ -72,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php else: ?>
         <form method="post">
+            <?= csrf_field() ?>
             <div class="form-row">
                 <div class="form-group">
                     <label for="username">Username</label>
@@ -85,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-row">
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" name="password" id="password" class="form-control" required minlength="8">
+                    <input type="password" name="password" id="password" class="form-control" required minlength="12">
                 </div>
                 <div class="form-group">
                     <label for="confirm_password">Confirm Password</label>

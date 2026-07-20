@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-$userRole = $_SESSION['user']['role'] ?? '';
-$isSystemAdmin = $userRole === 'admin';
+$userRole = userRole();
+$isSystemAdmin = isSuperAdmin();
 
 // Handle approve/reject/delete/activate for system admin via POST only
 if ($isSystemAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -20,7 +20,7 @@ if ($isSystemAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->beginTransaction();
             try {
                 $db->prepare("UPDATE stores SET status = 'active' WHERE id = ?")->execute([$sid]);
-                $db->prepare("UPDATE users SET status = 'active' WHERE store_id = ? AND role = 'store_admin'")->execute([$sid]);
+                $db->prepare("UPDATE users SET status = 'active' WHERE store_id = ? AND role != 'super_admin'")->execute([$sid]);
                 $db->commit();
                 logAction($db, 'approve_store', 'store', $sid, 'Approved pending store: ' . $store['name']);
                 $_SESSION['pos_flash'] = ['type' => 'success', 'message' => 'Store "' . $store['name'] . '" approved and activated.'];
@@ -40,7 +40,7 @@ if ($isSystemAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->beginTransaction();
             try {
                 $db->prepare("UPDATE stores SET status = 'inactive' WHERE id = ?")->execute([$sid]);
-                $db->prepare("UPDATE users SET status = 'inactive' WHERE store_id = ? AND role = 'store_admin'")->execute([$sid]);
+                $db->prepare("UPDATE users SET status = 'inactive' WHERE store_id = ? AND role != 'super_admin'")->execute([$sid]);
                 $db->commit();
                 logAction($db, 'reject_store', 'store', $sid, 'Rejected pending store: ' . $store['name']);
                 $_SESSION['pos_flash'] = ['type' => 'warning', 'message' => 'Store "' . $store['name'] . '" rejected and deactivated.'];
@@ -61,7 +61,7 @@ if ($isSystemAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->beginTransaction();
             try {
                 $db->prepare("DELETE FROM stores WHERE id = ?")->execute([$sid]);
-                $db->prepare("DELETE FROM users WHERE store_id = ? AND role = 'store_admin'")->execute([$sid]);
+                $db->prepare("DELETE FROM users WHERE store_id = ? AND role != 'super_admin'")->execute([$sid]);
                 $db->commit();
                 logAction($db, 'delete_store', 'store', $sid, 'Deleted store: ' . $delStore['name']);
                 $_SESSION['pos_flash'] = ['type' => 'success', 'message' => 'Store "' . $delStore['name'] . '" deleted.'];
@@ -73,7 +73,6 @@ if ($isSystemAdmin && $_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('index.php?page=stores');
     }
 
-    // Activate or switch store
     if (isset($_POST['activate'])) {
         $sid = (int) $_POST['activate'];
         $store = getStore($db, $sid);
@@ -118,11 +117,9 @@ if ($isSystemAdmin) {
 }
 ?>
 <div class="page-header">
-    <h1><i class="fas fa-store"></i> Stores
-        <?php if ($pendingCount > 0): ?>
-            <span class="badge badge-warning fs-12 ml-8" style="vertical-align:middle"><?= $pendingCount ?> pending</span>
-        <?php endif; ?>
-    </h1>
+    <?php if ($pendingCount > 0 && $isSystemAdmin): ?>
+        <span class="badge badge-warning fs-12 ml-8" style="vertical-align:middle"><?= $pendingCount ?> pending</span>
+    <?php endif; ?>
     <?php if ($isSystemAdmin): ?>
     <a href="index.php?page=store-form" class="btn btn-primary"><i class="fas fa-plus"></i> Add Store</a>
     <?php endif; ?>
@@ -192,7 +189,9 @@ if ($isSystemAdmin) {
                                         <button type="submit" class="btn btn-sm btn-success"><i class="fas fa-check"></i> Reactivate</button>
                                     </form>
                                 <?php endif; ?>
+                                <?php if ($isSystemAdmin || (int) $s['id'] === activeStoreId()): ?>
                                 <a href="index.php?page=store-form&id=<?= (int) $s['id'] ?>" class="btn btn-sm btn-ghost" title="Edit store"><i class="fas fa-edit"></i></a>
+                                <?php endif; ?>
                                 <?php if ((int) $s['id'] !== ACTIVE_STORE_ID && $isSystemAdmin): ?>
                                     <form method="post" action="index.php?page=stores" style="display:inline" onsubmit="return confirm('Delete this store? This cannot be undone.')">
                                         <?= csrf_field() ?>
@@ -205,7 +204,7 @@ if ($isSystemAdmin) {
                     </tr>
                 <?php endforeach; ?>
                 <?php if (empty($stores)): ?>
-                    <tr><td colspan="7" class="text-center text-muted py-20">No stores found.
+                    <tr><td colspan="7" class="text-center py-20 text-muted">No stores found.
                         <?php if ($isSystemAdmin): ?>
                         <br><a href="index.php?page=store-form" class="btn btn-sm btn-primary mt-8">Add Store</a>
                         <?php endif; ?>

@@ -4,6 +4,9 @@ if (!SELF_CHECKOUT_ENABLED) {
     redirect('index.php?page=login');
 }
 
+// Apply the customer-photo retention policy whenever this checkout is opened.
+purgeExpiredCustomerPhotos($db);
+
 $exitPage = isLoggedIn() ? 'dashboard' : 'login';
 
 // Admin unlock logic
@@ -14,7 +17,7 @@ if (isset($_POST['sc_unlock'])) {
     $scUsername = trim($_POST['sc_username'] ?? '');
     $scPassword = $_POST['sc_password'] ?? '';
     if ($scUsername && $scPassword) {
-        $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND status = 'active' AND role IN ('admin', 'manager', 'store_admin')");
+        $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND status = 'active' AND role IN ('super_admin', 'manager', 'store_admin')");
         $stmt->execute([$scUsername]);
         $scUser = $stmt->fetch();
         if ($scUser && password_verify($scPassword, $scUser['password'])) {
@@ -33,7 +36,7 @@ if (isset($_POST['sc_exit_unlock'])) {
     $scUsername = trim($_POST['sc_exit_username'] ?? '');
     $scPassword = $_POST['sc_exit_password'] ?? '';
     if ($scUsername && $scPassword) {
-        $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND status = 'active' AND role IN ('admin', 'manager', 'store_admin')");
+        $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND status = 'active' AND role IN ('super_admin', 'manager', 'store_admin')");
         $stmt->execute([$scUsername]);
         $scUser = $stmt->fetch();
         if ($scUser && password_verify($scPassword, $scUser['password'])) {
@@ -221,9 +224,11 @@ try {
             </div>
             <div class="sc-grid" id="sc-grid">
                 <?php foreach ($products as $p): ?>
-                <div class="sc-card" data-id="<?= (int) $p['id'] ?>" data-name="<?= e(strtolower($p['name'])) ?>" data-barcode="<?= e(strtolower($p['barcode'] ?? '')) ?>" data-cat="<?= e(strtolower($p['category'] ?? '')) ?>" data-price="<?= (float) $p['price'] ?>" data-stock="<?= (int) $p['stock_quantity'] ?>" data-dname="<?= e($p['name']) ?>">
+                <div class="sc-card <?= !$p['image'] ? 'sc-card-no-image' : '' ?> <?= (int) $p['stock_quantity'] <= 0 ? 'is-sold-out' : '' ?>" role="button" tabindex="<?= (int) $p['stock_quantity'] > 0 ? '0' : '-1' ?>" aria-label="Add <?= e($p['name']) ?> to cart, <?= money((float) $p['price']) ?>, <?= (int) $p['stock_quantity'] > 0 ? (int) $p['stock_quantity'] . ' in stock' : 'out of stock' ?>" aria-disabled="<?= (int) $p['stock_quantity'] <= 0 ? 'true' : 'false' ?>" data-id="<?= (int) $p['id'] ?>" data-name="<?= e(strtolower($p['name'])) ?>" data-barcode="<?= e(strtolower($p['barcode'] ?? '')) ?>" data-cat="<?= e(strtolower($p['category'] ?? '')) ?>" data-price="<?= (float) $p['price'] ?>" data-stock="<?= (int) $p['stock_quantity'] ?>" data-dname="<?= e($p['name']) ?>">
                     <?php if ($p['image']): ?>
                         <img src="<?= e($p['image']) ?>" alt="" class="sc-card-img" loading="lazy">
+                    <?php else: ?>
+                        <div class="sc-card-placeholder" aria-hidden="true"><i class="fas fa-box"></i></div>
                     <?php endif; ?>
                     <h4 class="sc-card-name"><?= e($p['name']) ?></h4>
                     <div class="sc-card-sku"><?= e($p['barcode'] ?: '—') ?></div>
@@ -237,7 +242,7 @@ try {
         </div>
 
         <div class="sc-cart" id="sc-cart">
-            <div class="sc-cart-head">
+            <div class="sc-cart-head" aria-live="polite">
                 <i class="fas fa-shopping-basket"></i> Your Cart
                 <span class="sc-cart-count" id="sc-cart-count">0</span>
             </div>
@@ -264,6 +269,8 @@ try {
 <?php endif; ?>
 </div>
 
+<div id="sc-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
 <div class="modal-overlay" id="sc-pay-modal">
     <div class="modal" style="width:480px">
         <h3><i class="fas fa-credit-card"></i> Payment</h3>
@@ -274,12 +281,19 @@ try {
         </div>
         <div class="sc-pay-summary" id="sc-pay-summary"></div>
 
-        <!-- Step 1: Photo -->
+        <!-- Step 1: Optional photo, with explicit consent -->
         <div id="sc-photo-step">
             <p class="sc-step-title">
-                <i class="fas fa-camera"></i> Step 1: Customer Photo
+                <i class="fas fa-camera"></i> Step 1: Customer Photo <span class="sc-step-optional">(optional)</span>
             </p>
             <div class="sc-camera-area">
+                <div class="form-group" style="text-align:left;max-width:620px;margin:0 auto 14px">
+                    <label for="sc-photo-consent" style="font-size:14px;line-height:1.45">
+                        <input type="checkbox" id="sc-photo-consent" onchange="scSetPhotoConsent(this.checked)">
+                        I consent to my photo being used for transaction fraud prevention and stored securely for 30 days.
+                    </label>
+                    <small style="display:block;margin:6px 0 0 25px;color:var(--gray-400)">You can continue without a photo. See the Privacy Policy for details.</small>
+                </div>
                 <div class="sc-camera-preview" id="sc-camera-preview">
                     <video id="sc-video" autoplay playsinline></video>
                     <canvas id="sc-canvas"></canvas>
@@ -287,12 +301,13 @@ try {
                 </div>
                 <div class="sc-camera-msg" id="sc-camera-msg">
                     <i class="fas fa-camera"></i>
-                    <p>Click below to open camera and take a photo</p>
+                    <p>Consent first, then open the camera to take a photo</p>
                 </div>
                 <div class="sc-camera-actions">
-                    <button id="sc-cam-btn" class="btn btn-primary" onclick="scOpenCam()"><i class="fas fa-camera"></i> Take Photo</button>
+                    <button id="sc-cam-btn" class="btn btn-primary" onclick="scOpenCam()" disabled><i class="fas fa-camera"></i> Take Photo</button>
                     <button id="sc-capture-btn" class="btn btn-success" style="display:none" onclick="scCapture()"><i class="fas fa-camera"></i> Capture</button>
                     <button id="sc-retake-btn" class="btn btn-outline" style="display:none" onclick="scRetake()"><i class="fas fa-redo"></i> Retake</button>
+                    <button id="sc-skip-photo-btn" class="btn btn-outline" onclick="scContinueWithoutPhoto()"><i class="fas fa-forward"></i> Continue without a photo</button>
                 </div>
                 <div class="sc-photo-status" id="sc-photo-status"></div>
             </div>
@@ -439,8 +454,16 @@ if (scGrid) {
             cart.push({ id, name, price, qty: 1, stock });
         }
         scUpdate();
+        scAnnounce(`${name} added to your cart.`);
         card.style.transform = 'scale(0.95)';
         setTimeout(() => card.style.transform = '', 150);
+    });
+    scGrid.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const card = e.target.closest('.sc-card');
+        if (!card) return;
+        e.preventDefault();
+        card.click();
     });
 }
 
@@ -479,6 +502,7 @@ function scUpdate() {
     if (!cart.length) {
         itemsEl.innerHTML = '<div class="sc-cart-empty"><i class="fas fa-cart-plus"></i><p>Tap products to add them to your cart</p></div>';
         foot.style.display = 'none';
+        scAnnounce('Your cart is empty.');
         return;
     }
     foot.style.display = 'block';
@@ -516,10 +540,16 @@ function scQty(i, d) {
     else if (n > item.stock) { alert('Not enough stock'); }
     else { item.qty = n; }
     scUpdate();
+    scAnnounce(`${item.name}, quantity ${item.qty}.`);
 }
 
-function scRm(i) { cart.splice(i, 1); scUpdate(); }
+function scRm(i) { const item = cart[i]; cart.splice(i, 1); scUpdate(); scAnnounce(`${item.name} removed from your cart.`); }
 function scClear() { if (!cart.length || !confirm('Clear cart?')) return; cart = []; scUpdate(); }
+
+function scAnnounce(message) {
+    const status = document.getElementById('sc-status');
+    if (status) status.textContent = message;
+}
 
 function scExitPrompt() {
     document.getElementById('sc-exit-modal').classList.add('show');
@@ -536,6 +566,10 @@ async function scOpenCam() {
     const camBtn = document.getElementById('sc-cam-btn');
     const captureBtn = document.getElementById('sc-capture-btn');
     const msg = document.getElementById('sc-camera-msg');
+    if (!document.getElementById('sc-photo-consent').checked) {
+        document.getElementById('sc-photo-status').innerHTML = '<span style="color:var(--danger)">Please give consent before taking a photo, or continue without one.</span>';
+        return;
+    }
     try {
         scStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: 640, height: 480 } });
         video.srcObject = scStream;
@@ -553,6 +587,10 @@ async function scOpenCam() {
 }
 
 function scCapture() {
+    if (!document.getElementById('sc-photo-consent').checked) {
+        scPhotoData = '';
+        return;
+    }
     const video = document.getElementById('sc-video');
     const canvas = document.getElementById('sc-canvas');
     const img = document.getElementById('sc-captured-img');
@@ -567,14 +605,40 @@ function scCapture() {
     if (scStream) { scStream.getTracks().forEach(t => t.stop()); scStream = null; }
     document.getElementById('sc-capture-btn').style.display = 'none';
     document.getElementById('sc-retake-btn').style.display = 'inline-flex';
-    document.getElementById('sc-photo-status').innerHTML = '<span style="color:var(--success)"><i class="fas fa-check-circle"></i> Photo captured</span>';
+    document.getElementById('sc-photo-status').innerHTML = '<span style="color:var(--success)"><i class="fas fa-check-circle"></i> Photo captured and scheduled for deletion after 30 days</span>';
     document.getElementById('sc-cam-btn').style.display = 'none';
-    // Step indicator
+    scShowCustomerStep();
+}
+
+function scShowCustomerStep() {
     document.getElementById('sc-step-dot-1').classList.add('active');
     document.getElementById('sc-step-dot-2').classList.add('active');
-    // Show customer step
     document.getElementById('sc-customer-step').style.display = 'block';
     document.getElementById('sc-customer-step').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function scContinueWithoutPhoto() {
+    if (scStream) { scStream.getTracks().forEach(t => t.stop()); scStream = null; }
+    scPhotoData = '';
+    document.getElementById('sc-camera-preview').style.display = 'none';
+    document.getElementById('sc-capture-btn').style.display = 'none';
+    document.getElementById('sc-retake-btn').style.display = 'none';
+    document.getElementById('sc-cam-btn').style.display = 'inline-flex';
+    scShowCustomerStep();
+}
+
+function scSetPhotoConsent(hasConsent) {
+    const cameraButton = document.getElementById('sc-cam-btn');
+    cameraButton.disabled = !hasConsent;
+    if (!hasConsent) {
+        if (scStream) { scStream.getTracks().forEach(t => t.stop()); scStream = null; }
+        scPhotoData = '';
+        document.getElementById('sc-camera-preview').style.display = 'none';
+        document.getElementById('sc-captured-img').style.display = 'none';
+        document.getElementById('sc-capture-btn').style.display = 'none';
+        document.getElementById('sc-retake-btn').style.display = 'none';
+        document.getElementById('sc-photo-status').innerHTML = '';
+    }
 }
 
 function scRetake() {
@@ -602,6 +666,8 @@ function scPay() {
             <strong>${fmt(window._scTotal)}</strong>
         </div>`;
     // Reset payment modal
+    document.getElementById('sc-photo-consent').checked = false;
+    document.getElementById('sc-cam-btn').disabled = true;
     scPhotoData = '';
     document.getElementById('sc-camera-preview').style.display = 'none';
     document.getElementById('sc-camera-msg').style.display = 'block';
@@ -732,7 +798,9 @@ function scConfirmPayment() {
     fd.append('subtotal', (window._scSub || 0).toString());
     fd.append('tax', (window._scTax || 0).toString());
     fd.append('total', pp.total.toString());
-    fd.append('photo', scPhotoData);
+    const photoConsent = document.getElementById('sc-photo-consent').checked && !!scPhotoData;
+    fd.append('photo', photoConsent ? scPhotoData : '');
+    fd.append('photo_consent', photoConsent ? '1' : '0');
     fd.append('customer_name', document.getElementById('sc-cust-name').value.trim());
     fd.append('customer_email', document.getElementById('sc-cust-email').value.trim());
     fd.append('customer_phone', document.getElementById('sc-cust-phone').value.trim());

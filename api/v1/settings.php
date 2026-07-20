@@ -3,46 +3,33 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
-requireRole($user, 'admin');
+requireRole($user, 'super_admin', 'store_admin');
+
+$targetStoreId = $apiStoreId;
 
 switch ($method) {
     case 'GET':
-        $stmt = $db->prepare("SELECT `key`, `value` FROM `settings`");
-        $stmt->execute();
-        $settings = [];
-        while ($row = $stmt->fetch()) {
-            $settings[$row['key']] = $row['value'];
-        }
+        $store = getStore($db, $targetStoreId);
+        $settings = getStoreSettings($db, $targetStoreId);
+        $settings['store_name'] = $store['name'] ?? '';
+        $settings['store_address'] = $store['address'] ?? '';
+        $settings['store_contact'] = $store['contact'] ?? '';
+        $settings['tax_rate'] = (string) ($store['tax_rate'] ?? '0');
+        $settings['currency'] = $store['currency'] ?? 'ZAR';
+        $settings['daily_target'] = (string) ($store['daily_target'] ?? '0');
+        $settings['receipt_footer'] = $settings['receipt_footer'] ?: ($store['receipt_footer'] ?? '');
         jsonResponse(['settings' => $settings]);
 
     case 'PUT':
         $input = getJsonInput();
-        $allowedKeys = ['store_name', 'store_address', 'store_contact', 'tax_rate', 'currency', 'receipt_footer', 'daily_target', 'self_checkout_enabled'];
+        unset($input['store_id']); // prevent store_id override
 
-        if (defined('ACTIVE_STORE_ID') && ACTIVE_STORE_ID > 0) {
-            $storeFields = [];
-            $storeParams = [];
-            foreach ($input as $key => $value) {
-                if (in_array($key, $allowedKeys, true)) {
-                    $storeFields[] = "$key = ?";
-                    $storeParams[] = (string) $value;
-                }
-            }
-            if (!empty($storeFields)) {
-                $storeParams[] = ACTIVE_STORE_ID;
-                $stmt = $db->prepare("UPDATE stores SET " . implode(', ', $storeFields) . " WHERE id = ?");
-                $stmt->execute($storeParams);
-            }
-        } else {
-            $stmt = $db->prepare("INSERT INTO `settings` (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
-            foreach ($input as $key => $value) {
-                if (in_array($key, $allowedKeys, true)) {
-                    $stmt->execute([$key, (string) $value]);
-                }
-            }
+        if (empty($input)) {
+            jsonResponse(['error' => 'No settings provided'], 400);
         }
 
-        jsonResponse(['success' => true]);
+        saveStoreSettings($db, $targetStoreId, $input);
+        jsonResponse(['success' => true, 'message' => 'Settings saved.']);
 
     default:
         jsonResponse(['error' => 'Method not allowed'], 405);

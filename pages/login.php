@@ -10,6 +10,9 @@ header('Expires: 0');
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validate_csrf($_POST['_csrf'] ?? '')) {
+        $error = 'Your session expired. Please refresh and try again.';
+    } else {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     $displayName = trim($_POST['display_name'] ?? '');
@@ -19,6 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $remaining = 5;
     if (!in_array($ip, ['127.0.0.1', '::1', 'localhost'])) {
         $remaining = rate_limit_check_sliding($db, 'ip:' . $ip, 'login', 5, 900);
+    }
     }
     if ($remaining <= 0) {
         $error = 'Too many login attempts. Please try again later.';
@@ -37,8 +41,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             logAction($db, 'failed_login_inactive', 'user', 0, 'Inactive account login attempt: ' . $username . ' from ' . $ip);
         } elseif (login($db, $username, $password, $displayName)) {
             rate_limit_hit($db, 'ip:' . $ip, 'login');
-            logAction($db, 'login', 'user', (int) ($_SESSION['user']['id'] ?? 0), 'User logged in: ' . $username);
-            redirect('index.php?page=dashboard');
+            // Role-based redirect
+            $role = $_SESSION['user_role'] ?? '';
+            if ($role === 'cashier') {
+                redirect('index.php?page=sales');
+            } else {
+                redirect('index.php?page=dashboard');
+            }
         } else {
             rate_limit_hit($db, 'ip:' . $ip, 'login');
             $error = 'Invalid username or password.';
@@ -70,6 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <form method="post">
+            <?= csrf_field() ?>
             <div class="form-row">
                 <div class="form-group">
                     <label for="username">Username</label>

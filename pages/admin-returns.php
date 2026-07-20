@@ -2,8 +2,7 @@
 
 declare(strict_types=1);
 
-$user = $_SESSION['user'] ?? [];
-$userRole = $_SESSION['user']['role'] ?? userRole();
+$userRole = userRole();
 
 // Handle approve/reject via POST only
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -24,10 +23,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->beginTransaction();
 
                 $items = json_decode($rq['items'], true);
-                processReturnApproval($db, $items, $rq['reason'], $rq['resolution'], (int) ($rq['exchange_product_id'] ?? 0), (int) ($rq['exchange_qty'] ?? 0), $user);
+                $adminUser = [
+                    'id' => $_SESSION['user_id'],
+                    'full_name' => userName(),
+                    'username' => $_SESSION['user_name'],
+                ];
+                processReturnApproval($db, $items, $rq['reason'], $rq['resolution'], (int) ($rq['exchange_product_id'] ?? 0), (int) ($rq['exchange_qty'] ?? 0), $adminUser);
 
                 $stmt = $db->prepare("UPDATE return_requests SET status = 'approved', admin_id = ?, admin_notes = ?, updated_at = NOW() WHERE id = ?");
-                $stmt->execute([$user['id'], $_POST['notes'] ?? 'Approved by admin', $id]);
+                $stmt->execute([$_SESSION['user_id'], $_POST['notes'] ?? 'Approved by admin', $id]);
 
                 $db->commit();
                 logAction($db, 'return_approved', 'return_request', $id, 'Return request ' . $id . ' approved');
@@ -44,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['reject'])) {
         $id = (int) $_POST['reject'];
         $stmt = $db->prepare("UPDATE return_requests SET status = 'rejected', admin_id = ?, admin_notes = ?, updated_at = NOW() WHERE id = ? AND status = 'pending'");
-        $stmt->execute([$user['id'], $_POST['notes'] ?? 'Rejected by admin', $id]);
+        $stmt->execute([$_SESSION['user_id'], $_POST['notes'] ?? 'Rejected by admin', $id]);
         logAction($db, 'return_rejected', 'return_request', $id, 'Return request ' . $id . ' rejected');
         $_SESSION['pos_flash'] = ['type' => 'info', 'message' => 'Return request rejected.'];
         redirect('index.php?page=returns');

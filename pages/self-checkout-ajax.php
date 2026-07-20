@@ -43,10 +43,33 @@ try {
     $customerName = trim($_POST['customer_name'] ?? '');
     $customerEmail = trim($_POST['customer_email'] ?? '');
     $customerPhone = trim($_POST['customer_phone'] ?? '');
+    $photoConsent = ($_POST['photo_consent'] ?? '') === '1';
+    $photoPayload = null;
+    $photoData = $_POST['photo'] ?? '';
+
+    // Never retain a photo merely because a client submitted one. Consent must
+    // be explicit and the image must be valid before the sale is created.
+    if ($photoConsent && $photoData !== '') {
+        if (!preg_match('/^data:image\/(jpeg|png|jpg);base64,/', $photoData)) {
+            throw new \Exception('Invalid customer photo. Please retake it or continue without a photo.');
+        }
+        $base64 = substr($photoData, strpos($photoData, ',') + 1);
+        $decoded = base64_decode($base64, true);
+        if ($decoded === false || strlen($decoded) > 2 * 1024 * 1024) {
+            throw new \Exception('Customer photo must be a valid image smaller than 2 MB.');
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_buffer($finfo, $decoded);
+        finfo_close($finfo);
+        if (!in_array($mime, ['image/jpeg', 'image/png'], true)) {
+            throw new \Exception('Customer photo must be a JPEG or PNG image.');
+        }
+        $photoPayload = ['bytes' => $decoded, 'extension' => $mime === 'image/png' ? 'png' : 'jpg'];
+    }
 
     // Determine cashier
     if (isLoggedIn()) {
-        $cashierId = (int) ($_SESSION['user']['id'] ?? 0);
+        $cashierId = (int) ($_SESSION['user_id'] ?? 0);
     } else {
         $stmt = $db->prepare("SELECT id FROM users WHERE username = 'selfcheckout'");
         $stmt->execute();
@@ -68,7 +91,7 @@ try {
     // Verify each item against the database
     $calculatedSubtotal = 0;
     $verifiedItems = [];
-    $checkStmt = $db->prepare("SELECT id, name, price, cost_price, stock_quantity FROM products WHERE id = ? AND status = 'active' AND store_id = ?");
+    $checkStmt = $db->prepare("SELECT id, name, price, cost_price, stock_quantity FROM products WHERE id = ? AND status = 'active' AND store_id = ? FOR UPDATE");
 
     foreach ($data as $i => $item) {
         $productId = (int) ($item['id'] ?? 0);
@@ -162,7 +185,7 @@ try {
     $saleId = (int) $db->lastInsertId();
 
     $itemStmt = $db->prepare("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost_price, total) VALUES (?,?,?,?,?,?,?)");
-    $updateStock = $db->prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?");
+    $updateStock = $db->prepare("UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND store_id = ? AND stock_quantity >= ?");
     $adjStmt = $db->prepare("INSERT INTO stock_adjustments (product_id, user_id, user_name, type, quantity, previous_stock, new_stock, reason, store_id) VALUES (?,?,?,?,?,?,?,?,?)");
 
     foreach ($verifiedItems as $vi) {
@@ -174,32 +197,31 @@ try {
         $prevStock = (int) ($prod['stock_quantity'] ?? 0);
         $newStock = $prevStock - $vi['qty'];
 
-        $updateStock->execute([$vi['qty'], $vi['product_id']]);
+        $updateStock->execute([$vi['qty'], $vi['product_id'], activeStoreId(), $vi['qty']]);
+        if ($updateStock->rowCount() !== 1) {
+            throw new \Exception('Insufficient stock for ' . $vi['product_name'] . '.');
+        }
         $adjStmt->execute([$vi['product_id'], $cashierId, 'Self Checkout', 'sale', $vi['qty'], $prevStock, $newStock, 'Self-checkout ' . $receiptNumber, activeStoreId()]);
     }
 
-    // Save captured photo
-    $photoData = $_POST['photo'] ?? '';
-    if ($photoData && preg_match('/^data:image\/(jpeg|png|jpg);base64,/', $photoData)) {
-        $base64 = substr($photoData, strpos($photoData, ',') + 1);
-        $decoded = base64_decode($base64, true);
-        if ($decoded !== false && strlen($decoded) <= 2 * 1024 * 1024) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = finfo_buffer($finfo, $decoded);
-            finfo_close($finfo);
-            if (in_array($mime, ['image/jpeg', 'image/png'], true)) {
-                $photoDir = __DIR__ . '/../captured_photos';
-                if (!is_dir($photoDir)) {
-                    @mkdir($photoDir, 0755, true);
-                    @file_put_contents($photoDir . '/.htaccess', "Require all denied\n");
-                }
-                $photoFile = $photoDir . '/sale_' . $saleId . '.jpg';
-                @file_put_contents($photoFile, $decoded);
-            }
+    $db->commit();
+
+    if ($photoPayload !== null) {
+        $photoDir = __DIR__ . '/../captured_photos';
+        if (!is_dir($photoDir)) {
+            @mkdir($photoDir, 0755, true);
+            @file_put_contents($photoDir . '/.htaccess', "Require all denied\n");
+        }
+        $relativePath = 'captured_photos/sale_' . $saleId . '.' . $photoPayload['extension'];
+        $photoFile = __DIR__ . '/../' . $relativePath;
+        if (@file_put_contents($photoFile, $photoPayload['bytes'], LOCK_EX) !== false) {
+            $photoStmt = $db->prepare("UPDATE sales SET customer_photo_path = ?, customer_photo_consent_at = NOW(), customer_photo_delete_after = DATE_ADD(NOW(), INTERVAL " . CUSTOMER_PHOTO_RETENTION_DAYS . " DAY) WHERE id = ?");
+            $photoStmt->execute([$relativePath, $saleId]);
+        } else {
+            error_log('Unable to save consented customer photo for sale ' . $saleId);
         }
     }
-
-    $db->commit();
+    purgeExpiredCustomerPhotos($db);
 
     $_SESSION['pos_flash'] = [
         'type' => 'success',

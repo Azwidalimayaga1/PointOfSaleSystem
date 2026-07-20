@@ -3,7 +3,8 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
-requireRole($user, 'admin', 'manager', 'store_admin');
+$apiStoreId = requireApiStore($db, $user);
+requireRole($user, 'super_admin', 'manager', 'store_admin');
 
 switch ($method) {
     case 'GET':

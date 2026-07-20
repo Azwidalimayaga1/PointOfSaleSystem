@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 $user = requireAuth($db);
+$apiStoreId = requireApiStore($db, $user);
 
 switch ($method) {
     case 'GET':

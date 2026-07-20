@@ -1,6 +1,13 @@
 <?php
 declare(strict_types=1);
 
+// This destructive migration is intentionally command-line only. It must never
+// be reachable through the web server, even if server configuration is wrong.
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
 echo "=== SQLite to MySQL/MariaDB Migration Tool ===\n\n";
 
 // Step 1: Connect to SQLite
