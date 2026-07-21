@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/lib/FirebaseAuth.php';
+
 // Secure session cookie settings
 session_set_cookie_params([
     'lifetime' => 0,
@@ -18,6 +20,9 @@ define('DB_HOST', getenv('POS_DB_HOST') ?: 'localhost');
 define('DB_NAME', getenv('POS_DB_NAME') ?: 'pos_system');
 define('DB_USER', getenv('POS_DB_USER') ?: 'root');
 define('DB_PASS', getenv('POS_DB_PASS') !== false ? (string) getenv('POS_DB_PASS') : '');
+
+// Firebase Authentication is the source of truth for user credentials.
+$firebase = FirebaseAuth::fromEnvironment();
 
 // PDO connection
 try {
@@ -43,6 +48,7 @@ function initDatabase(PDO $db): void
             password VARCHAR(255) NOT NULL,
             full_name VARCHAR(255) NOT NULL,
             email VARCHAR(255) DEFAULT NULL,
+            firebase_uid VARCHAR(128) DEFAULT NULL UNIQUE,
             role VARCHAR(50) NOT NULL DEFAULT 'cashier',
             status VARCHAR(50) DEFAULT 'active',
             store_id INT DEFAULT NULL,
@@ -497,6 +503,7 @@ function addMissingColumns(PDO $db): void
         "ALTER TABLE stock_adjustments ADD COLUMN IF NOT EXISTS store_id INT DEFAULT 1",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS store_id INT DEFAULT 1",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS store_id INT DEFAULT NULL",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) DEFAULT NULL",
         "ALTER TABLE messages ADD COLUMN IF NOT EXISTS store_id INT DEFAULT NULL",
         "ALTER TABLE stores ADD COLUMN IF NOT EXISTS sale_sound_enabled TINYINT DEFAULT 1",
         "ALTER TABLE held_sales ADD COLUMN IF NOT EXISTS user_id INT NOT NULL DEFAULT 0",
@@ -517,6 +524,7 @@ function addMissingColumns(PDO $db): void
     try { $db->exec("ALTER TABLE users MODIFY COLUMN role VARCHAR(50) NOT NULL DEFAULT 'cashier'"); } catch (PDOException $e) {}
     // Ensure email column exists
     try { $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255) DEFAULT NULL"); } catch (PDOException $e) {}
+    try { $db->exec("ALTER TABLE users ADD UNIQUE INDEX IF NOT EXISTS uq_users_firebase_uid (firebase_uid)"); } catch (PDOException $e) {}
     // Ensure updated_at column exists
     try { $db->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"); } catch (PDOException $e) {}
     // Migrate existing 'admin' role to 'super_admin'

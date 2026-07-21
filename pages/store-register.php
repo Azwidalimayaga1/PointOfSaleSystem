@@ -23,15 +23,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $confirm = $_POST['confirm_password'] ?? '';
 
-    if (!$storeName || !$username || !$fullName || !$password) {
-        $error = 'Store name, username, full name, and password are required.';
+    if (!$storeName || !$username || !$fullName || !$email || !$password) {
+        $error = 'Store name, email, username, full name, and password are required.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = 'Enter a valid email address.';
     } elseif (strlen($password) < 12) {
         $error = 'Password must be at least 12 characters.';
     } elseif ($password !== $confirm) {
         $error = 'Passwords do not match.';
     } else {
-        $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
-        $stmt->execute([$username]);
+        $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ? OR email = ?");
+        $stmt->execute([$username, $email]);
         if ($stmt->fetchColumn() > 0) {
             $error = 'Username already exists.';
         } else {
@@ -40,20 +42,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->fetchColumn() > 0) {
                 $error = 'A store with this name already exists.';
             } else {
-                $db->beginTransaction();
                 try {
+                    if (!$firebase instanceof FirebaseAuth) throw new RuntimeException('Firebase Authentication is not configured.');
+                    $firebaseUser = $firebase->createUser($email, $password);
+                    $firebaseUid = (string) ($firebaseUser['localId'] ?? '');
+                    if ($firebaseUid === '') throw new RuntimeException('Missing Firebase user ID.');
+
+                    $db->beginTransaction();
                     $stmt = $db->prepare("INSERT INTO stores (name, address, contact, email, status) VALUES (?, ?, ?, ?, 'pending')");
                     $stmt->execute([$storeName, $address, $contact, $email]);
                     $storeId = (int) $db->lastInsertId();
 
                     $hash = password_hash($password, PASSWORD_BCRYPT);
-                    $stmt = $db->prepare("INSERT INTO users (username, password, full_name, role, status, store_id) VALUES (?, ?, ?, 'store_admin', 'pending', ?)");
-                    $stmt->execute([$username, $hash, $fullName, $storeId]);
+                    $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, status, firebase_uid, store_id) VALUES (?, ?, ?, ?, 'store_admin', 'pending', ?, ?)");
+                    $stmt->execute([$username, $email, $hash, $fullName, $firebaseUid, $storeId]);
 
                     $db->commit();
                     $success = 'Store registration submitted! An administrator will review and activate your store. You will be notified once approved.';
                 } catch (Exception $e) {
-                    $db->rollBack();
+                    if ($db->inTransaction()) $db->rollBack();
+                    error_log($e->getMessage());
                     $error = 'Registration failed. Please try again.';
                 }
             }
@@ -109,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" name="email" id="email" class="form-control">
+                    <input type="email" name="email" id="email" class="form-control" required>
                 </div>
             </div>
 

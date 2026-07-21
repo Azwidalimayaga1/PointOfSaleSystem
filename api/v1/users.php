@@ -53,18 +53,23 @@ switch ($method) {
             jsonResponse(['error' => 'Username or email already exists'], 409);
         }
 
-        $supabaseId = '';
-        if ($supabase && $email && $password) {
-            try {
-                $result = $supabase->adminCreateUser($email, $password, ['full_name' => $fullName]);
-                $supabaseId = $result['user']['id'] ?? '';
-            } catch (Exception $e) {
-            }
+        if (!$firebase instanceof FirebaseAuth || !$email || !$password) {
+            jsonResponse(['error' => 'Email, password, and Firebase configuration are required.'], 400);
+        }
+        try {
+            $result = $firebase->createUser($email, $password);
+            $firebaseUid = (string) ($result['localId'] ?? '');
+        } catch (RuntimeException $e) {
+            error_log($e->getMessage());
+            jsonResponse(['error' => 'Unable to create Firebase user.'], 400);
+        }
+        if ($firebaseUid === '') {
+            jsonResponse(['error' => 'Unable to create Firebase user.'], 400);
         }
 
         $hash = $password ? securePasswordHash($password) : '';
-        $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, status, supabase_id, store_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$username, $email, $hash, $fullName, $role, $status, $supabaseId, ACTIVE_STORE_ID]);
+        $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, status, firebase_uid, store_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$username, $email, $hash, $fullName, $role, $status, $firebaseUid, ACTIVE_STORE_ID]);
 
         jsonResponse(['success' => true, 'user_id' => (int) $db->lastInsertId()], 201);
 
@@ -103,8 +108,7 @@ switch ($method) {
         }
 
         if (isset($input['password']) && $input['password']) {
-            $fields[] = "password = ?";
-            $params[] = securePasswordHash($input['password']);
+            jsonResponse(['error' => 'Use Firebase password reset to change a password.'], 400);
         }
 
         if (empty($fields)) {

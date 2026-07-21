@@ -30,7 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'Too many password reset requests. Try again later.';
             } else {
                 rate_limit_hit($db, 'ip:' . $ip, 'forgot_password');
-                $token = generatePasswordResetToken($db, $email);
+                if ($firebase instanceof FirebaseAuth) {
+                    try { $firebase->sendPasswordResetEmail($email); } catch (RuntimeException $e) { error_log($e->getMessage()); }
+                }
                 logAction($db, 'password_reset_request', 'user', 0, "Password reset requested for $email from " . getClientIp());
                 $success = 'If that email is registered, a reset link has been sent. Please check your email inbox.';
             }

@@ -204,11 +204,37 @@ function userName(): ?string
 
 function login(PDO $db, string $username, string $password, string $displayName = ''): bool
 {
-    $stmt = $db->prepare("SELECT * FROM users WHERE username = ? AND status = 'active'");
-    $stmt->execute([$username]);
+    $stmt = $db->prepare("SELECT * FROM users WHERE (username = ? OR email = ?) AND status = 'active'");
+    $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
 
-    if ($user && password_verify($password, $user['password'])) {
+    $firebase = $GLOBALS['firebase'] ?? null;
+    if (!$firebase instanceof FirebaseAuth || !$user || empty($user['email'])) {
+        return false;
+    }
+
+    try {
+        $firebaseUser = $firebase->signInWithPassword($user['email'], $password);
+        $firebaseUid = (string) ($firebaseUser['localId'] ?? '');
+    } catch (RuntimeException $e) {
+        error_log($e->getMessage());
+        return false;
+    }
+
+    if ($firebaseUid === '') {
+        return false;
+    }
+
+    if (!empty($user['firebase_uid']) && !hash_equals((string) $user['firebase_uid'], $firebaseUid)) {
+        error_log('Firebase UID mismatch for local POS user ' . (int) $user['id']);
+        return false;
+    }
+
+    if (empty($user['firebase_uid'])) {
+        $db->prepare("UPDATE users SET firebase_uid = ? WHERE id = ?")->execute([$firebaseUid, $user['id']]);
+    }
+
+    {
         session_regenerate_id(true);
         $role = $user['role'];
         $storeId = $user['store_id'] ? (int) $user['store_id'] : null;

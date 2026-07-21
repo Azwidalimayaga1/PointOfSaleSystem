@@ -37,29 +37,22 @@ switch ($method) {
                 jsonResponse(['error' => 'Invalid credentials'], 401);
             }
 
-            $authenticated = false;
+            if (!$firebase instanceof FirebaseAuth || empty($user['email'])) {
+                jsonResponse(['error' => 'Firebase Authentication is not configured for this account.'], 503);
+            }
 
-            if ($supabase && $user['supabase_id']) {
-                try {
-                    $result = $supabase->signInWithPassword($email, $password);
-                    $supabaseId = $result['user']['id'] ?? '';
-                    if ($supabaseId && $user['supabase_id'] === $supabaseId) {
-                        $authenticated = true;
-                        $_SESSION['supabase_access_token'] = $result['access_token'] ?? '';
-                        $_SESSION['supabase_refresh_token'] = $result['refresh_token'] ?? '';
-                    }
-                } catch (Exception $e) {
-                    // Auth failed below
-                }
-            } elseif ($user['password']) {
-                if (verifyPassword($password, $user['password'])) {
+            $authenticated = false;
+            try {
+                $result = $firebase->signInWithPassword($user['email'], $password);
+                $firebaseUid = (string) ($result['localId'] ?? '');
+                if ($firebaseUid !== '' && (empty($user['firebase_uid']) || hash_equals((string) $user['firebase_uid'], $firebaseUid))) {
                     $authenticated = true;
-                    if (needsRehash($user['password'])) {
-                        $newHash = securePasswordHash($password);
-                        $stmt = $db->prepare("UPDATE users SET password = ? WHERE id = ?");
-                        $stmt->execute([$newHash, $user['id']]);
+                    if (empty($user['firebase_uid'])) {
+                        $db->prepare("UPDATE users SET firebase_uid = ? WHERE id = ?")->execute([$firebaseUid, $user['id']]);
                     }
                 }
+            } catch (RuntimeException $e) {
+                error_log($e->getMessage());
             }
 
             if (!$authenticated) {
@@ -144,20 +137,23 @@ switch ($method) {
             rate_limit_hit($db, 'ip:' . $ip, 'register_api');
             rate_limit_hit($db, 'domain:' . $domain, 'register_domain_api');
 
-            if ($supabase) {
-                try {
-                    $result = $supabase->signUp($email, $password);
-                    $supabaseId = $result['user']['id'] ?? '';
-                } catch (Exception $e) {
-                    jsonResponse(['error' => 'Registration failed: ' . $e->getMessage()], 500);
-                }
-            } else {
-                $supabaseId = '';
+            if (!$firebase instanceof FirebaseAuth) {
+                jsonResponse(['error' => 'Firebase Authentication is not configured.'], 503);
+            }
+            try {
+                $result = $firebase->createUser($email, $password);
+                $firebaseUid = (string) ($result['localId'] ?? '');
+            } catch (RuntimeException $e) {
+                error_log($e->getMessage());
+                jsonResponse(['error' => 'Registration failed.'], 400);
+            }
+            if ($firebaseUid === '') {
+                jsonResponse(['error' => 'Registration failed.'], 400);
             }
 
             $hash = securePasswordHash($password);
-            $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, status, supabase_id, store_id) VALUES (?, ?, ?, ?, 'cashier', 'pending', ?, ?)");
-            $stmt->execute([$username, $email, $hash, $fullName, $supabaseId, $storeId]);
+            $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, status, firebase_uid, store_id) VALUES (?, ?, ?, ?, 'cashier', 'pending', ?, ?)");
+            $stmt->execute([$username, $email, $hash, $fullName, $firebaseUid, $storeId]);
 
             $userId = (int) $db->lastInsertId();
             generateEmailVerificationToken($db, $userId);
@@ -216,13 +212,11 @@ switch ($method) {
 
             rate_limit_hit($db, 'ip:' . $ip, 'forgot_password_api');
 
-            $token = generatePasswordResetToken($db, $email);
-            if ($token) {
-                logActivity($db, 0, 'system', 'password_reset_request', "Password reset requested for $email");
-                jsonResponse(['message' => 'If the email exists, a reset link has been sent.', 'reset_token' => $token]);
-            } else {
-                jsonResponse(['message' => 'If the email exists, a reset link has been sent.']);
+            if ($firebase instanceof FirebaseAuth) {
+                try { $firebase->sendPasswordResetEmail($email); } catch (RuntimeException $e) { error_log($e->getMessage()); }
             }
+            logActivity($db, 0, 'system', 'password_reset_request', "Password reset requested for $email");
+            jsonResponse(['message' => 'If the email exists, a reset link has been sent.']);
         }
 
         if ($id === 'reset-password') {
@@ -244,14 +238,7 @@ switch ($method) {
             }
             rate_limit_hit($db, 'ip:' . $ip, 'reset_password_api');
 
-            $userId = verifyPasswordResetToken($db, $token);
-            if (!$userId) {
-                jsonResponse(['error' => 'Invalid or expired reset token'], 400);
-            }
-
-            resetPassword($db, $userId, $password);
-            logActivity($db, $userId, '', 'password_reset', 'Password reset completed');
-            jsonResponse(['success' => true, 'message' => 'Password has been reset.']);
+            jsonResponse(['error' => 'Use the Firebase password-reset link sent to your email.'], 400);
         }
 
         jsonResponse(['error' => 'Not found'], 404);

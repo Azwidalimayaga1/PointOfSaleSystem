@@ -39,7 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$username) $errors[] = 'Username is required.';
     if (!$fullName) $errors[] = 'Full name is required.';
     if (!$userId && !$password) $errors[] = 'Password is required for new users.';
+    if (!$userId && !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'A valid email is required for new users.';
     if ($password && strlen($password) < 8) $errors[] = 'Password must be at least 8 characters.';
+    if ($userId && $password) $errors[] = 'Use Firebase password reset to change an existing password.';
+    if ($userId && $editUser && $email !== (string) ($editUser['email'] ?? '')) $errors[] = 'Update an existing email address in Firebase first.';
 
     // Check unique username
     $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ? AND id != ?");
@@ -92,24 +95,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $actualStoreId = $role === 'super_admin' ? null : ($storeId > 0 ? $storeId : null);
 
         if ($userId > 0) {
-            if ($password) {
-                $hash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, email=?, role=?, store_id=?, status=?, password=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-                $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $hash, $userId]);
-            } else {
-                $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, email=?, role=?, store_id=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
-                $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $userId]);
-            }
+            $stmt = $db->prepare("UPDATE users SET username=?, full_name=?, email=?, role=?, store_id=?, status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?");
+            $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $userId]);
             logAction($db, 'user_update', 'user', $userId, 'Updated user: ' . $username . ' (role: ' . $role . ', status: ' . $status . ')');
             $success = 'User updated successfully.';
         } else {
-            $hash = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $db->prepare("INSERT INTO users (username, full_name, email, role, store_id, status, password) VALUES (?,?,?,?,?,?,?)");
-            $stmt->execute([$username, $fullName, $email ?: null, $role, $actualStoreId, $status, $hash]);
-            $newUserId = (int) $db->lastInsertId();
-            logAction($db, 'user_create', 'user', $newUserId, 'Created user: ' . $username . ' (role: ' . $role . ')');
-            $success = 'User added successfully.';
-            $userId = $newUserId;
+            try {
+                if (!$firebase instanceof FirebaseAuth) throw new RuntimeException('Firebase Authentication is not configured.');
+                $firebaseUser = $firebase->createUser($email, $password);
+                $firebaseUid = (string) ($firebaseUser['localId'] ?? '');
+                if ($firebaseUid === '') throw new RuntimeException('Missing Firebase user ID.');
+                $hash = password_hash($password, PASSWORD_BCRYPT);
+                $stmt = $db->prepare("INSERT INTO users (username, full_name, email, role, store_id, status, password, firebase_uid) VALUES (?,?,?,?,?,?,?,?)");
+                $stmt->execute([$username, $fullName, $email, $role, $actualStoreId, $status, $hash, $firebaseUid]);
+                $newUserId = (int) $db->lastInsertId();
+                logAction($db, 'user_create', 'user', $newUserId, 'Created user: ' . $username . ' (role: ' . $role . ')');
+                $success = 'User added successfully.';
+                $userId = $newUserId;
+            } catch (RuntimeException $e) {
+                error_log($e->getMessage());
+                $errors[] = 'User could not be created in Firebase.';
+            }
         }
         $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
         $stmt->execute([$userId]);
@@ -163,7 +169,7 @@ if ($isSystemAdmin) {
         </div>
         <div class="form-group">
             <label for="email">Email</label>
-            <input type="email" id="email" name="email" class="form-control" value="<?= e($u['email'] ?? '') ?>">
+            <input type="email" id="email" name="email" class="form-control" value="<?= e($u['email'] ?? '') ?>" <?= $u ? 'readonly' : 'required' ?> >
         </div>
         <div class="form-row">
             <div class="form-group">
@@ -202,7 +208,7 @@ if ($isSystemAdmin) {
             <?php endif; ?>
         </div>
         <div class="form-group">
-            <label for="password"><?= $u ? 'New Password (leave blank to keep current)' : 'Password' ?></label>
+            <label for="password"><?= $u ? 'Password changes use Firebase reset' : 'Password' ?></label>
             <input type="password" id="password" name="password" class="form-control" minlength="8" <?= $u ? '' : 'required' ?>>
         </div>
         <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> <?= $u ? 'Update User' : 'Add User' ?></button>

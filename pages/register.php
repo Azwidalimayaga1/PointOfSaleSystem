@@ -17,12 +17,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
     $username = trim($_POST['username'] ?? '');
     $fullName = trim($_POST['full_name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $confirm = $_POST['confirm_password'] ?? '';
     $storeId = (int) ($_POST['store_id'] ?? 0);
 
-    if (!$username || !$fullName || !$password) {
+    if (!$username || !$fullName || !$email || !$password) {
         $error = 'All fields are required.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = 'Enter a valid email address.';
     } elseif (strlen($password) < 12) {
         $error = 'Password must be at least 12 characters.';
     } elseif ($password !== $confirm) {
@@ -33,15 +36,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$store) {
             $error = 'Please select a valid store.';
         } else {
-            $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
-            $stmt->execute([$username]);
+            $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ? OR email = ?");
+            $stmt->execute([$username, $email]);
             if ($stmt->fetchColumn() > 0) {
                 $error = 'Username already exists.';
             } else {
-                $hash = password_hash($password, PASSWORD_BCRYPT);
-                $stmt = $db->prepare("INSERT INTO users (username, password, full_name, role, status, store_id) VALUES (?, ?, ?, 'cashier', 'pending', ?)");
-                $stmt->execute([$username, $hash, $fullName, $storeId]);
-                $success = 'Registration submitted! Wait for admin approval before logging in.';
+                if (!$firebase instanceof FirebaseAuth) {
+                    $error = 'Firebase Authentication is not configured.';
+                } else {
+                    try {
+                        $firebaseUser = $firebase->createUser($email, $password);
+                        $firebaseUid = (string) ($firebaseUser['localId'] ?? '');
+                        if ($firebaseUid === '') throw new RuntimeException('Missing Firebase user ID.');
+                        $hash = password_hash($password, PASSWORD_BCRYPT);
+                        $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, status, firebase_uid, store_id) VALUES (?, ?, ?, ?, 'cashier', 'pending', ?, ?)");
+                        $stmt->execute([$username, $email, $hash, $fullName, $firebaseUid, $storeId]);
+                        $success = 'Registration submitted! Wait for admin approval before logging in.';
+                    } catch (RuntimeException $e) {
+                        error_log($e->getMessage());
+                        $error = 'Registration could not be completed.';
+                    }
+                }
             }
         }
     }
@@ -86,6 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <label for="full_name">Full Name</label>
                     <input type="text" name="full_name" id="full_name" class="form-control" required>
                 </div>
+            </div>
+            <div class="form-group">
+                <label for="email">Email Address</label>
+                <input type="email" name="email" id="email" class="form-control" required>
             </div>
             <div class="form-row">
                 <div class="form-group">

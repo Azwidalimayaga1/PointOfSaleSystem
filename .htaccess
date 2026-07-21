@@ -20,10 +20,6 @@ ServerSignature Off
     Require all denied
 </Files>
 
-<Files "supabase-config.php">
-    Require all denied
-</Files>
-
 <Files "migrate_to_mysql.php">
     Require all denied
 </Files>
