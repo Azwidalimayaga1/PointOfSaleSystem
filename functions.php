@@ -208,31 +208,29 @@ function login(PDO $db, string $username, string $password, string $displayName 
     $stmt->execute([$username, $username]);
     $user = $stmt->fetch();
 
+    if (!$user) {
+        return false;
+    }
+
+    $authenticated = false;
     $firebase = $GLOBALS['firebase'] ?? null;
-    if (!$firebase instanceof FirebaseAuth || !$user || empty($user['email'])) {
-        return false;
+    if (!empty($user['firebase_uid'])) {
+        if (!$firebase instanceof FirebaseAuth || empty($user['email'])) {
+            return false;
+        }
+        try {
+            $firebaseUser = $firebase->signInWithPassword($user['email'], $password);
+            $firebaseUid = (string) ($firebaseUser['localId'] ?? '');
+            $authenticated = $firebaseUid !== '' && hash_equals((string) $user['firebase_uid'], $firebaseUid);
+        } catch (RuntimeException $e) {
+            error_log($e->getMessage());
+        }
+    } else {
+        // Temporary migration bridge for accounts created before Firebase.
+        $authenticated = !empty($user['password']) && password_verify($password, $user['password']);
     }
 
-    try {
-        $firebaseUser = $firebase->signInWithPassword($user['email'], $password);
-        $firebaseUid = (string) ($firebaseUser['localId'] ?? '');
-    } catch (RuntimeException $e) {
-        error_log($e->getMessage());
-        return false;
-    }
-
-    if ($firebaseUid === '') {
-        return false;
-    }
-
-    if (!empty($user['firebase_uid']) && !hash_equals((string) $user['firebase_uid'], $firebaseUid)) {
-        error_log('Firebase UID mismatch for local POS user ' . (int) $user['id']);
-        return false;
-    }
-
-    if (empty($user['firebase_uid'])) {
-        $db->prepare("UPDATE users SET firebase_uid = ? WHERE id = ?")->execute([$firebaseUid, $user['id']]);
-    }
+    if (!$authenticated) return false;
 
     {
         session_regenerate_id(true);

@@ -37,22 +37,23 @@ switch ($method) {
                 jsonResponse(['error' => 'Invalid credentials'], 401);
             }
 
-            if (!$firebase instanceof FirebaseAuth || empty($user['email'])) {
-                jsonResponse(['error' => 'Firebase Authentication is not configured for this account.'], 503);
-            }
-
             $authenticated = false;
-            try {
-                $result = $firebase->signInWithPassword($user['email'], $password);
-                $firebaseUid = (string) ($result['localId'] ?? '');
-                if ($firebaseUid !== '' && (empty($user['firebase_uid']) || hash_equals((string) $user['firebase_uid'], $firebaseUid))) {
-                    $authenticated = true;
-                    if (empty($user['firebase_uid'])) {
-                        $db->prepare("UPDATE users SET firebase_uid = ? WHERE id = ?")->execute([$firebaseUid, $user['id']]);
-                    }
+            if (!empty($user['firebase_uid'])) {
+                if (!$firebase instanceof FirebaseAuth || empty($user['email'])) {
+                    jsonResponse(['error' => 'Firebase Authentication is not configured for this account.'], 503);
                 }
-            } catch (RuntimeException $e) {
-                error_log($e->getMessage());
+                try {
+                    $result = $firebase->signInWithPassword($user['email'], $password);
+                    $firebaseUid = (string) ($result['localId'] ?? '');
+                    if ($firebaseUid !== '' && hash_equals((string) $user['firebase_uid'], $firebaseUid)) {
+                        $authenticated = true;
+                    }
+                } catch (RuntimeException $e) {
+                    error_log($e->getMessage());
+                }
+            } elseif (!empty($user['password'])) {
+                // Temporary migration bridge for pre-Firebase accounts.
+                $authenticated = verifyPassword($password, $user['password']);
             }
 
             if (!$authenticated) {
